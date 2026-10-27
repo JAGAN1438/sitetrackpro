@@ -1,0 +1,1661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<title>Site Track Pro</title>
+<link rel="icon" href="data:," />
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  html, body { background:#FAF6EF; margin:0; padding:0; overscroll-behavior-y: contain; }
+  * { box-sizing: border-box; }
+  body { font-family:'Inter', sans-serif; }
+  #fallback { display:none; padding:24px; font-family:sans-serif; color:#B34B3C; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div id="fallback">
+  <h2>Something went wrong loading the app</h2>
+  <p id="fallback-msg" style="color:#333;font-size:13px;"></p>
+  <p style="color:#333;font-size:13px;">Try reloading the page. If this keeps happening, your backup file is still safe on your device — restore it after reloading.</p>
+</div>
+<script>
+  window.addEventListener('error', function (e) {
+    var root = document.getElementById('root');
+    var fb = document.getElementById('fallback');
+    if (root && fb && root.children.length === 0) {
+      fb.style.display = 'block';
+      document.getElementById('fallback-msg').textContent = (e && e.message) ? e.message : 'Unknown error';
+    }
+  });
+</script>
+<script>
+const { useState, useEffect, useRef, useCallback } = React;
+function IconBase({ ch, size = 16, className = "" }) {
+  return /* @__PURE__ */ React.createElement("span", { className, style: { fontSize: size, lineHeight: 1, display: "inline-block" } }, ch);
+}
+const MapPin = (p) => /* @__PURE__ */ React.createElement(IconBase, { ch: "\u{1F4CD}", ...p });
+const Camera = (p) => /* @__PURE__ */ React.createElement(IconBase, { ch: "\u{1F4F7}", ...p });
+const Clock = (p) => /* @__PURE__ */ React.createElement(IconBase, { ch: "\u23F0", ...p });
+const Phone = (p) => /* @__PURE__ */ React.createElement(IconBase, { ch: "\u260E\uFE0F", ...p });
+const User = (p) => /* @__PURE__ */ React.createElement(IconBase, { ch: "\u{1F464}", ...p });
+const Plus = (p) => /* @__PURE__ */ React.createElement(IconBase, { ch: "\uFF0B", ...p });
+const Search = (p) => /* @__PURE__ */ React.createElement(IconBase, { ch: "\u{1F50D}", ...p });
+const ChevronLeft = (p) => /* @__PURE__ */ React.createElement(IconBase, { ch: "\u2190", ...p });
+const AlertCircle = (p) => /* @__PURE__ */ React.createElement(IconBase, { ch: "\u26A0\uFE0F", ...p });
+const X = (p) => /* @__PURE__ */ React.createElement(IconBase, { ch: "\u2715", ...p });
+const Navigation = (p) => /* @__PURE__ */ React.createElement(IconBase, { ch: "\u{1F9ED}", ...p });
+const Users = (p) => /* @__PURE__ */ React.createElement(IconBase, { ch: "\u{1F465}", ...p });
+const Palette = (p) => /* @__PURE__ */ React.createElement(IconBase, { ch: "\u{1F3A8}", ...p });
+const Trash2 = (p) => /* @__PURE__ */ React.createElement(IconBase, { ch: "\u{1F5D1}\uFE0F", ...p });
+const Calendar = (p) => /* @__PURE__ */ React.createElement(IconBase, { ch: "\u{1F4C5}", ...p });
+const MapPinned = (p) => /* @__PURE__ */ React.createElement(IconBase, { ch: "\u{1F5FA}\uFE0F", ...p });
+const HardHat = (p) => /* @__PURE__ */ React.createElement(IconBase, { ch: "\u{1F477}", ...p });
+const PencilRuler = (p) => /* @__PURE__ */ React.createElement(IconBase, { ch: "\u{1F4D0}", ...p });
+const Building2 = (p) => /* @__PURE__ */ React.createElement(IconBase, { ch: "\u{1F3E2}", ...p });
+const Contact = (p) => /* @__PURE__ */ React.createElement(IconBase, { ch: "\u{1F4C7}", ...p });
+const Download = (p) => /* @__PURE__ */ React.createElement(IconBase, { ch: "\u2B07\uFE0F", ...p });
+const ImageIcon = (p) => /* @__PURE__ */ React.createElement(IconBase, { ch: "\u{1F5BC}\uFE0F", ...p });
+const Pencil = (p) => /* @__PURE__ */ React.createElement(IconBase, { ch: "\u270F\uFE0F", ...p });
+const STATUS = {
+  cold: { label: "Cold", color: "#38BDF8" },
+  warm: { label: "Warm", color: "#2563EB" },
+  hot: { label: "Hot", color: "#DC2626" },
+  converted: { label: "Converted", color: "#16A34A" },
+  lost: { label: "Lost", color: "#1A1A1A" }
+};
+const SITE_TYPES = ["Residency", "Commercial", "Govt"];
+const CONTACT_ROLES = [
+  { key: "owner", label: "Site owner", icon: User },
+  { key: "engineer", label: "Engineer", icon: HardHat },
+  { key: "builder", label: "Builder", icon: Building2 },
+  { key: "architect", label: "Architect", icon: PencilRuler },
+  { key: "painter", label: "Painter", icon: Palette },
+  { key: "reference", label: "Reference person", icon: Contact }
+];
+const STORAGE_KEY = "tracker-data-v2";
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const todayISO = () => (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+function daysBetween(a, b) {
+  const d1 = /* @__PURE__ */ new Date(a + "T00:00:00");
+  const d2 = /* @__PURE__ */ new Date(b + "T00:00:00");
+  return Math.round((d1 - d2) / 864e5);
+}
+function fmtDate(iso) {
+  if (!iso) return "\u2014";
+  const d = /* @__PURE__ */ new Date(iso + "T00:00:00");
+  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+}
+function latestVisit(site) {
+  if (!site.visits || site.visits.length === 0) return null;
+  return [...site.visits].sort((a, b) => a.date < b.date ? 1 : -1)[0];
+}
+function followUpInfo(site) {
+  const lv = latestVisit(site);
+  if (!lv || !lv.followUpDate) return null;
+  const diff = daysBetween(lv.followUpDate, todayISO());
+  return { date: lv.followUpDate, diff };
+}
+function mapsNavUrl(lat, lng) {
+  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+}
+function escapeHtml(str) {
+  return String(str != null ? str : "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+function bearingTo(lat1, lng1, lat2, lng2) {
+  const y = Math.sin((lng2 - lng1) * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180);
+  const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) - Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos((lng2 - lng1) * Math.PI / 180);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+function compassLabel(deg) {
+  const dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+  return dirs[Math.round(deg / 45) % 8];
+}
+function compressImage(file, maxWidth = 900, quality = 0.6) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("read failed"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("decode failed"));
+      img.onload = () => {
+        const scale = Math.min(1, maxWidth / img.width);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+function useTesseract() {
+  const [ready, setReady] = useState(!!window.Tesseract);
+  useEffect(() => {
+    if (window.Tesseract) {
+      setReady(true);
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+    script.onload = () => setReady(true);
+    document.body.appendChild(script);
+  }, []);
+  return ready;
+}
+function parseLatLngFromText(text) {
+  const cleaned = text.replace(/[Oo](?=\d)/g, "0");
+  const labeled = cleaned.match(/Lat[a-zA-Z.]*[:\s]*([+-]?\d{1,3}\.\d{3,8})[°\s\S]{0,25}?Long?[a-zA-Z.]*[:\s]*([+-]?\d{1,3}\.\d{3,8})/i);
+  if (labeled) return { lat: labeled[1], lng: labeled[2] };
+  const pair = cleaned.match(/([+-]?\d{1,2}\.\d{3,8})\s*,\s*([+-]?\d{1,3}\.\d{3,8})/);
+  if (pair) return { lat: pair[1], lng: pair[2] };
+  return null;
+}
+const DB_NAME = "site-track-pro-db";
+const STORE_NAME = "kv";
+function openTrackerDB() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) {
+      reject(new Error("no indexeddb"));
+      return;
+    }
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains(STORE_NAME)) {
+        req.result.createObjectStore(STORE_NAME);
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function loadData() {
+  try {
+    const db = await openTrackerDB();
+    return await new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, "readonly");
+      const req = tx.objectStore(STORE_NAME).get(STORAGE_KEY);
+      req.onsuccess = () => resolve(req.result || { areas: {}, sites: {} });
+      req.onerror = () => resolve({ areas: {}, sites: {} });
+    });
+  } catch (e) {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : { areas: {}, sites: {} };
+    } catch (e2) {
+      return { areas: {}, sites: {} };
+    }
+  }
+}
+async function saveData(data) {
+  try {
+    const db = await openTrackerDB();
+    return await new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      tx.objectStore(STORE_NAME).put(data, STORAGE_KEY);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    });
+  } catch (e) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      return true;
+    } catch (e2) {
+      return false;
+    }
+  }
+}
+function useLongPress(onLongPress, ms = 550) {
+  const timerRef = useRef(null);
+  const firedRef = useRef(false);
+  const start = () => {
+    firedRef.current = false;
+    timerRef.current = setTimeout(() => {
+      firedRef.current = true;
+      onLongPress();
+    }, ms);
+  };
+  const clear = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+  };
+  return {
+    onTouchStart: start,
+    onTouchEnd: clear,
+    onTouchMove: clear,
+    onMouseDown: start,
+    onMouseUp: clear,
+    onMouseLeave: clear
+  };
+}
+function RenameDialog({ title, value, onCancel, onSave }) {
+  const [text, setText] = useState(value || "");
+  return /* @__PURE__ */ React.createElement("div", { className: "fixed inset-0 z-50 bg-black/50 flex items-center justify-center px-6", onClick: onCancel }, /* @__PURE__ */ React.createElement("div", { className: "bg-white rounded-sm p-5 w-full max-w-sm", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "text-[11px] font-bold uppercase tracking-wide text-[#756D66] mb-2", style: { fontFamily: "'IBM Plex Mono', monospace" } }, title), /* @__PURE__ */ React.createElement(
+    "input",
+    {
+      autoFocus: true,
+      value: text,
+      onChange: (e) => setText(e.target.value),
+      onKeyDown: (e) => {
+        if (e.key === "Enter" && text.trim()) onSave(text.trim());
+      },
+      className: inputCls + " mb-4"
+    }
+  ), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2" }, /* @__PURE__ */ React.createElement("button", { onClick: onCancel, className: "flex-1 py-2.5 rounded-sm border border-[#E4DCCF] text-[13px] font-semibold text-[#221D1B]" }, "Cancel"), /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      onClick: () => text.trim() && onSave(text.trim()),
+      disabled: !text.trim(),
+      className: "flex-1 py-2.5 rounded-sm text-white text-[13px] font-semibold disabled:opacity-40",
+      style: { background: "#D81E2C" }
+    },
+    "Save"
+  ))));
+}
+function Lightbox({ src, onClose }) {
+  const [scale, setScale] = useState(1);
+  const [translate, setTranslate] = useState({ x: 0, y: 0 });
+  const pinchRef = useRef(null);
+  const dragRef = useRef(null);
+  const lastTapRef = useRef(0);
+  useEffect(() => {
+    setScale(1);
+    setTranslate({ x: 0, y: 0 });
+  }, [src]);
+  if (!src) return null;
+  const dist = (touches) => {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+  const toggleZoom = () => {
+    if (scale > 1) {
+      setScale(1);
+      setTranslate({ x: 0, y: 0 });
+    } else setScale(2.5);
+  };
+  const onTouchStart = (e) => {
+    if (e.touches.length === 2) {
+      pinchRef.current = { startDist: dist(e.touches), startScale: scale };
+    } else if (e.touches.length === 1) {
+      const now = Date.now();
+      if (now - lastTapRef.current < 300) toggleZoom();
+      lastTapRef.current = now;
+      dragRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY, startTranslate: translate };
+    }
+  };
+  const onTouchMove = (e) => {
+    if (e.touches.length === 2 && pinchRef.current) {
+      const ratio = dist(e.touches) / pinchRef.current.startDist;
+      setScale(Math.min(4, Math.max(1, pinchRef.current.startScale * ratio)));
+    } else if (e.touches.length === 1 && dragRef.current && scale > 1) {
+      const dx = e.touches[0].clientX - dragRef.current.startX;
+      const dy = e.touches[0].clientY - dragRef.current.startY;
+      setTranslate({ x: dragRef.current.startTranslate.x + dx, y: dragRef.current.startTranslate.y + dy });
+    }
+  };
+  const onTouchEnd = (e) => {
+    if (e.touches.length < 2) pinchRef.current = null;
+    if (e.touches.length === 0) dragRef.current = null;
+  };
+  return /* @__PURE__ */ React.createElement(
+    "div",
+    {
+      className: "fixed inset-0 z-50 bg-black/95 flex items-center justify-center overflow-hidden",
+      onClick: scale === 1 ? onClose : void 0
+    },
+    /* @__PURE__ */ React.createElement("div", { className: "absolute top-4 right-4 flex items-center gap-2 z-10" }, /* @__PURE__ */ React.createElement(
+      "a",
+      {
+        href: src,
+        download: `site-photo-${Date.now()}.jpg`,
+        onClick: (e) => e.stopPropagation(),
+        className: "flex items-center gap-1.5 text-white bg-white/15 px-3 py-2 rounded-sm text-[12px] font-semibold"
+      },
+      /* @__PURE__ */ React.createElement(Download, { size: 16 }),
+      " Download"
+    ), /* @__PURE__ */ React.createElement("button", { className: "text-white p-2 bg-white/15 rounded-sm", onClick: (e) => {
+      e.stopPropagation();
+      onClose();
+    } }, /* @__PURE__ */ React.createElement(X, { size: 20 }))),
+    /* @__PURE__ */ React.createElement(
+      "img",
+      {
+        src,
+        draggable: false,
+        onTouchStart,
+        onTouchMove,
+        onTouchEnd,
+        onDoubleClick: (e) => {
+          e.stopPropagation();
+          toggleZoom();
+        },
+        className: "max-w-full max-h-full object-contain select-none",
+        style: {
+          transform: `translate(${translate.x}px, ${translate.y}px) scale(${scale})`,
+          transition: pinchRef.current ? "none" : "transform 0.15s ease-out",
+          touchAction: "none",
+          cursor: scale > 1 ? "grab" : "zoom-in"
+        }
+      }
+    ),
+    scale === 1 && /* @__PURE__ */ React.createElement("div", { className: "absolute bottom-6 left-0 right-0 text-center text-white/60 text-[11px]" }, "Pinch or double-tap to zoom")
+  );
+}
+function Chip({ status }) {
+  const s = STATUS[status] || STATUS.cold;
+  return /* @__PURE__ */ React.createElement(
+    "span",
+    {
+      className: "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-sm text-[11px] font-semibold tracking-wide uppercase",
+      style: { background: s.color + "22", color: s.color, fontFamily: "'IBM Plex Mono', monospace" }
+    },
+    /* @__PURE__ */ React.createElement("span", { className: "w-2 h-2 rounded-full", style: { background: s.color } }),
+    s.label
+  );
+}
+function FollowBadge({ site }) {
+  const fu = followUpInfo(site);
+  if (!fu) return /* @__PURE__ */ React.createElement("span", { className: "text-[11px] text-[#948C82] font-mono" }, "no follow-up set");
+  let text, color;
+  if (fu.diff > 0) {
+    text = `Overdue ${fu.diff}d`;
+    color = "#B34B3C";
+  } else if (fu.diff === 0) {
+    text = "Due today";
+    color = "#D9A441";
+  } else {
+    text = `In ${-fu.diff}d`;
+    color = "#5B7F5E";
+  }
+  return /* @__PURE__ */ React.createElement("span", { className: "inline-flex items-center gap-1 text-[11px] font-semibold", style: { color, fontFamily: "'IBM Plex Mono', monospace" } }, /* @__PURE__ */ React.createElement(Clock, { size: 12 }), " ", text, " \xB7 ", fmtDate(fu.date));
+}
+function TopBar({ title, sub, onBack, right }) {
+  return /* @__PURE__ */ React.createElement("div", { className: "sticky top-0 z-10 bg-[#FAF6EF] border-b border-[#E4DCCF] px-3 py-3 flex items-center justify-between" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 min-w-0" }, /* @__PURE__ */ React.createElement("button", { onClick: onBack, className: "p-1.5 -ml-1.5 active:bg-black/5 rounded-sm shrink-0" }, /* @__PURE__ */ React.createElement(ChevronLeft, { size: 20 })), /* @__PURE__ */ React.createElement("div", { className: "min-w-0" }, /* @__PURE__ */ React.createElement("div", { className: "font-semibold text-[15px] truncate", style: { fontFamily: "'Space Grotesk', sans-serif" } }, title), sub && /* @__PURE__ */ React.createElement("div", { className: "text-[11px] text-[#948C82] font-mono truncate" }, sub))), right);
+}
+function Field({ label, children }) {
+  return /* @__PURE__ */ React.createElement("div", { className: "mb-3" }, /* @__PURE__ */ React.createElement("label", { className: "block text-[11px] font-bold uppercase tracking-wide text-[#756D66] mb-1", style: { fontFamily: "'IBM Plex Mono', monospace" } }, label), children);
+}
+const inputCls = "w-full border border-[#E4DCCF] rounded-sm px-3 py-2.5 text-[14px] outline-none focus:border-[#D81E2C] bg-white";
+function AreaCard({ area, count, due, onOpen, onLongPress }) {
+  const suppressClick = useRef(false);
+  const longPress = useLongPress(() => {
+    suppressClick.current = true;
+    onLongPress(area.id);
+  });
+  return /* @__PURE__ */ React.createElement(
+    "div",
+    {
+      ...longPress,
+      onClick: () => {
+        if (suppressClick.current) {
+          suppressClick.current = false;
+          return;
+        }
+        onOpen(area.id);
+      },
+      className: "w-full text-left bg-white border border-[#E4DCCF] rounded-sm px-4 py-3.5 mb-2.5 flex items-center justify-between cursor-pointer select-none"
+    },
+    /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { className: "text-[15px] font-semibold", style: { fontFamily: "'Space Grotesk', sans-serif" } }, area.name), /* @__PURE__ */ React.createElement("div", { className: "text-[12px] text-[#948C82] mt-0.5" }, count, " site", count !== 1 ? "s" : "")),
+    due > 0 && /* @__PURE__ */ React.createElement("span", { className: "text-[11px] font-bold px-2 py-1 rounded-sm shrink-0 ml-2", style: { background: "#B34B3C22", color: "#B34B3C" } }, due, " due")
+  );
+}
+function AreaList({ areas, sites, onOpenArea, onAddArea, onOpenMap, query, setQuery, allSitesFlat, onOpenSite, onRenameArea, onDeleteArea, onExport, onShareBackup, onImportClick, onGenerateReport, cloudEmail, cloudScriptUrl, cloudStatus, onSetCloudConfig, onCloudSave, onCloudLoad }) {
+  var _a, _b;
+  const areaArr = Object.values(areas).sort((a, b) => a.name.localeCompare(b.name));
+  const siteCountFor = (areaId) => Object.values(sites).filter((s) => s.areaId === areaId).length;
+  const dueCountFor = (areaId) => Object.values(sites).filter((s) => s.areaId === areaId).filter((s) => {
+    const f = followUpInfo(s);
+    return f && f.diff >= 0;
+  }).length;
+  const [menuAreaId, setMenuAreaId] = useState(null);
+  const [roleFilter, setRoleFilter] = useState(null);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [cloudEditing, setCloudEditing] = useState(!cloudEmail || !cloudScriptUrl);
+  const [emailDraft, setEmailDraft] = useState(cloudEmail || "");
+  const [urlDraft, setUrlDraft] = useState(cloudScriptUrl || "");
+  const searching = query.trim().length > 0;
+  const q = query.trim().toLowerCase();
+  const qDigits = q.replace(/\D/g, "");
+  const searchResults = searching ? allSitesFlat.filter((s) => {
+    const area = areas[s.areaId];
+    const textFields = [
+      s.siteName,
+      s.address,
+      s.siteType,
+      s.siteNotes,
+      area == null ? void 0 : area.name,
+      ...CONTACT_ROLES.flatMap((r) => {
+        var _a2, _b2, _c, _d;
+        return [(_b2 = (_a2 = s.contacts) == null ? void 0 : _a2[r.key]) == null ? void 0 : _b2.name, (_d = (_c = s.contacts) == null ? void 0 : _c[r.key]) == null ? void 0 : _d.phone];
+      }),
+      ...(s.extraContacts || []).flatMap((c) => [c.name, c.phone, c.notes])
+    ].filter(Boolean).map((f) => f.toLowerCase());
+    if (textFields.some((f) => f.includes(q))) return true;
+    if (qDigits.length >= 4) {
+      const phoneFields = [
+        ...CONTACT_ROLES.map((r) => {
+          var _a2, _b2;
+          return (_b2 = (_a2 = s.contacts) == null ? void 0 : _a2[r.key]) == null ? void 0 : _b2.phone;
+        }),
+        ...(s.extraContacts || []).map((c) => c.phone)
+      ].filter(Boolean).map((p) => p.replace(/\D/g, ""));
+      if (phoneFields.some((p) => p.includes(qDigits))) return true;
+    }
+    return false;
+  }) : [];
+  const roleContacts = roleFilter ? allSitesFlat.filter((s) => {
+    var _a2, _b2, _c, _d;
+    return ((_b2 = (_a2 = s.contacts) == null ? void 0 : _a2[roleFilter]) == null ? void 0 : _b2.name) || ((_d = (_c = s.contacts) == null ? void 0 : _c[roleFilter]) == null ? void 0 : _d.phone);
+  }).map((s) => ({ site: s, contact: s.contacts[roleFilter] })) : [];
+  return /* @__PURE__ */ React.createElement("div", { className: "pb-24" }, /* @__PURE__ */ React.createElement("div", { className: "px-4 pt-5 pb-3 flex items-center justify-between" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement("div", { className: "w-8 h-8 rounded-sm", style: { background: "#D81E2C" } }), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { className: "text-[19px] font-bold leading-tight text-[#221D1B]", style: { fontFamily: "'Space Grotesk', sans-serif" } }, "Site Track Pro"), /* @__PURE__ */ React.createElement("div", { className: "text-[11px] text-[#948C82] font-mono" }, "area-wise site diary"))), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5" }, /* @__PURE__ */ React.createElement("button", { onClick: onOpenMap, className: "flex items-center gap-1.5 px-3 py-2 rounded-sm border border-[#4C6B8A] text-[#4C6B8A] text-[12px] font-semibold" }, /* @__PURE__ */ React.createElement(MapPinned, { size: 15 }), " My Sites"), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowMoreMenu(true), className: "w-9 h-9 rounded-sm border border-[#E4DCCF] flex items-center justify-center text-[#221D1B] text-[18px] font-bold shrink-0" }, "\u22EE"))), /* @__PURE__ */ React.createElement("div", { className: "px-4 mb-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 bg-white border border-[#E4DCCF] rounded-sm px-3 py-2" }, /* @__PURE__ */ React.createElement(Search, { size: 15, className: "text-[#948C82]" }), /* @__PURE__ */ React.createElement("input", { value: query, onChange: (e) => setQuery(e.target.value), placeholder: "Search any site, contact...", className: "flex-1 outline-none text-[14px] bg-transparent" }))), /* @__PURE__ */ React.createElement("div", { className: "px-4 mb-3" }, /* @__PURE__ */ React.createElement("div", { className: "text-[10.5px] font-bold uppercase tracking-wide text-[#948C82] mb-1.5", style: { fontFamily: "'IBM Plex Mono', monospace" } }, "Filter by contact role"), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 overflow-x-auto pb-1" }, CONTACT_ROLES.map((r) => /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      key: r.key,
+      onClick: () => setRoleFilter(roleFilter === r.key ? null : r.key),
+      className: "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold border shrink-0",
+      style: {
+        borderColor: roleFilter === r.key ? "#221D1B" : "#E4DCCF",
+        background: roleFilter === r.key ? "#221D1B" : "transparent",
+        color: roleFilter === r.key ? "white" : "#756D66"
+      }
+    },
+    /* @__PURE__ */ React.createElement(r.icon, { size: 12 }),
+    " ",
+    r.label
+  )))), roleFilter ? /* @__PURE__ */ React.createElement("div", { className: "px-4" }, /* @__PURE__ */ React.createElement("div", { className: "text-[12px] font-bold uppercase tracking-wide text-[#756D66] mb-2", style: { fontFamily: "'IBM Plex Mono', monospace" } }, (_a = CONTACT_ROLES.find((r) => r.key === roleFilter)) == null ? void 0 : _a.label, " \xB7 ", roleContacts.length, " site", roleContacts.length !== 1 ? "s" : ""), roleContacts.length === 0 && /* @__PURE__ */ React.createElement("div", { className: "text-center py-10 text-[#948C82] text-[13px] border border-dashed border-[#E4DCCF] rounded-sm" }, "No sites have this contact filled in yet."), roleContacts.map(({ site: s, contact: c }) => {
+    var _a2;
+    return /* @__PURE__ */ React.createElement("button", { key: s.id, onClick: () => onOpenSite(s.id), className: "w-full text-left bg-white border border-[#E4DCCF] rounded-sm px-3 py-2.5 mb-2 flex items-center gap-3" }, s.sitePhoto ? /* @__PURE__ */ React.createElement("img", { src: s.sitePhoto, className: "w-10 h-10 rounded-sm object-cover" }) : /* @__PURE__ */ React.createElement("div", { className: "w-10 h-10 rounded-sm bg-[#F0EAE0] flex items-center justify-center" }, /* @__PURE__ */ React.createElement(Palette, { size: 15, className: "text-[#948C82]" })), /* @__PURE__ */ React.createElement("div", { className: "min-w-0 flex-1" }, /* @__PURE__ */ React.createElement("div", { className: "text-[13px] font-semibold truncate" }, c.name || "Unnamed", c.phone ? ` \xB7 ${c.phone}` : ""), /* @__PURE__ */ React.createElement("div", { className: "text-[11px] text-[#948C82] truncate" }, s.siteName, " \u2014 ", ((_a2 = areas[s.areaId]) == null ? void 0 : _a2.name) || "\u2014")), /* @__PURE__ */ React.createElement(Chip, { status: s.leadStatus }));
+  })) : searching ? /* @__PURE__ */ React.createElement("div", { className: "px-4" }, /* @__PURE__ */ React.createElement("div", { className: "text-[12px] font-bold uppercase tracking-wide text-[#756D66] mb-2", style: { fontFamily: "'IBM Plex Mono', monospace" } }, searchResults.length, " result", searchResults.length !== 1 ? "s" : ""), searchResults.map((s) => {
+    var _a2;
+    return /* @__PURE__ */ React.createElement("button", { key: s.id, onClick: () => onOpenSite(s.id), className: "w-full text-left bg-white border border-[#E4DCCF] rounded-sm px-3 py-2.5 mb-2 flex items-center gap-3" }, s.sitePhoto ? /* @__PURE__ */ React.createElement("img", { src: s.sitePhoto, className: "w-10 h-10 rounded-sm object-cover" }) : /* @__PURE__ */ React.createElement("div", { className: "w-10 h-10 rounded-sm bg-[#F0EAE0] flex items-center justify-center" }, /* @__PURE__ */ React.createElement(Palette, { size: 15, className: "text-[#948C82]" })), /* @__PURE__ */ React.createElement("div", { className: "min-w-0 flex-1" }, /* @__PURE__ */ React.createElement("div", { className: "text-[13px] font-semibold truncate" }, s.siteName), /* @__PURE__ */ React.createElement("div", { className: "text-[11px] text-[#948C82] truncate" }, ((_a2 = areas[s.areaId]) == null ? void 0 : _a2.name) || "\u2014", " \xB7 ", s.address)), /* @__PURE__ */ React.createElement(Chip, { status: s.leadStatus }));
+  })) : /* @__PURE__ */ React.createElement("div", { className: "px-4" }, areaArr.length === 0 && /* @__PURE__ */ React.createElement("div", { className: "text-center py-16 text-[#948C82]" }, /* @__PURE__ */ React.createElement(MapPinned, { size: 28, className: "mx-auto mb-2 opacity-40" }), /* @__PURE__ */ React.createElement("div", { className: "text-[13px]" }, "No areas yet. Add an area first, then add sites inside it.")), areaArr.map((a) => {
+    const count = siteCountFor(a.id);
+    const due = dueCountFor(a.id);
+    return /* @__PURE__ */ React.createElement(AreaCard, { key: a.id, area: a, count, due, onOpen: onOpenArea, onLongPress: setMenuAreaId });
+  })), /* @__PURE__ */ React.createElement("button", { onClick: onAddArea, className: "fixed bottom-6 right-5 w-14 h-14 rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform", style: { background: "#D81E2C" } }, /* @__PURE__ */ React.createElement(Plus, { size: 26, color: "white" })), menuAreaId && /* @__PURE__ */ React.createElement("div", { className: "fixed inset-0 z-40 bg-black/50 flex items-end", onClick: () => setMenuAreaId(null) }, /* @__PURE__ */ React.createElement("div", { className: "bg-white w-full rounded-t-lg p-2 pb-6", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "text-center text-[12px] text-[#948C82] py-2 border-b border-[#E4DCCF] mb-1" }, (_b = areas[menuAreaId]) == null ? void 0 : _b.name), /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      onClick: () => {
+        const id = menuAreaId;
+        setMenuAreaId(null);
+        onRenameArea(id);
+      },
+      className: "w-full text-left px-4 py-3 text-[14px] font-medium text-[#221D1B] flex items-center gap-2"
+    },
+    /* @__PURE__ */ React.createElement(Pencil, { size: 16, className: "text-[#4C6B8A]" }),
+    " Rename area"
+  ), /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      onClick: () => {
+        const id = menuAreaId;
+        setMenuAreaId(null);
+        onDeleteArea(id);
+      },
+      className: "w-full text-left px-4 py-3 text-[14px] font-medium text-[#B34B3C] flex items-center gap-2"
+    },
+    /* @__PURE__ */ React.createElement(Trash2, { size: 16 }),
+    " Delete area"
+  ), /* @__PURE__ */ React.createElement("button", { onClick: () => setMenuAreaId(null), className: "w-full text-center px-4 py-3 mt-1 text-[13px] font-semibold text-[#756D66] border-t border-[#E4DCCF]" }, "Cancel"))), showMoreMenu && /* @__PURE__ */ React.createElement("div", { className: "fixed inset-0 z-40 bg-black/50 flex items-end", onClick: () => setShowMoreMenu(false) }, /* @__PURE__ */ React.createElement("div", { className: "bg-white w-full rounded-t-lg p-4 pb-6 max-h-[85vh] overflow-y-auto", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-3" }, /* @__PURE__ */ React.createElement("div", { className: "text-[14px] font-bold", style: { fontFamily: "'Space Grotesk', sans-serif" } }, "Backup & Sync"), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowMoreMenu(false), className: "p-1 text-[#948C82]" }, /* @__PURE__ */ React.createElement(X, { size: 18 }))), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-2" }, /* @__PURE__ */ React.createElement("button", { onClick: onExport, className: "flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-sm border border-[#5B7F5E] text-[#5B7F5E] text-[12px] font-semibold" }, /* @__PURE__ */ React.createElement(Download, { size: 13 }), " Download backup"), /* @__PURE__ */ React.createElement("button", { onClick: onShareBackup, className: "flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-sm border border-[#4C6B8A] text-[#4C6B8A] text-[12px] font-semibold" }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 13, lineHeight: 1 } }, "\u{1F4E4}"), " Save to Drive / Mail")), /* @__PURE__ */ React.createElement("button", { onClick: onImportClick, className: "w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-sm border border-[#D9A441] text-[#D9A441] text-[12px] font-semibold mb-1" }, /* @__PURE__ */ React.createElement(ImageIcon, { size: 13 }), " Restore backup"), /* @__PURE__ */ React.createElement("div", { className: "text-[10.5px] text-[#948C82] text-center mb-3" }, "Backup always saves as ", /* @__PURE__ */ React.createElement("span", { className: "font-mono" }, "site-track-pro-backup.json"), " in Downloads."), /* @__PURE__ */ React.createElement("button", { onClick: onGenerateReport, className: "w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-sm text-white text-[12px] font-semibold mb-1", style: { background: "#221D1B" } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 14, lineHeight: 1 } }, "\u{1F4CA}"), " Generate Excel report"), /* @__PURE__ */ React.createElement("div", { className: "text-[10.5px] text-[#948C82] text-center mb-3" }, "Site details, contacts & Google Maps links \u2014 no photos. Separate sheet for visit history."), /* @__PURE__ */ React.createElement("div", { className: "bg-[#FAF6EF] border border-[#E4DCCF] rounded-sm p-3" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-2" }, /* @__PURE__ */ React.createElement("span", { className: "text-[11px] font-bold uppercase tracking-wide text-[#756D66]", style: { fontFamily: "'IBM Plex Mono', monospace" } }, "\u2601\uFE0F Cloud sync (Google Sheet)"), cloudStatus === "syncing" && /* @__PURE__ */ React.createElement("span", { className: "text-[10.5px] text-[#4C6B8A]" }, "syncing..."), cloudStatus === "synced" && /* @__PURE__ */ React.createElement("span", { className: "text-[10.5px] text-[#5B7F5E]" }, "synced"), cloudStatus === "error" && /* @__PURE__ */ React.createElement("span", { className: "text-[10.5px] text-[#B34B3C]" }, "sync failed")), cloudEditing ? /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement(
+    "input",
+    {
+      value: emailDraft,
+      onChange: (e) => setEmailDraft(e.target.value),
+      placeholder: "Your email (used as your data key)",
+      inputMode: "email",
+      className: inputCls + " text-[13px] mb-2 bg-white"
+    }
+  ), /* @__PURE__ */ React.createElement(
+    "input",
+    {
+      value: urlDraft,
+      onChange: (e) => setUrlDraft(e.target.value),
+      placeholder: "Apps Script Web App URL",
+      className: inputCls + " text-[12px] font-mono mb-2 bg-white"
+    }
+  ), /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      onClick: () => {
+        if (emailDraft.trim() && urlDraft.trim()) {
+          onSetCloudConfig(emailDraft.trim(), urlDraft.trim());
+          setCloudEditing(false);
+        }
+      },
+      disabled: !emailDraft.trim() || !urlDraft.trim(),
+      className: "w-full py-2 rounded-sm text-white text-[12px] font-semibold disabled:opacity-40",
+      style: { background: "#221D1B" }
+    },
+    "Save cloud settings"
+  )) : /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { className: "text-[12px] text-[#221D1B] mb-2 truncate" }, "Linked to: ", /* @__PURE__ */ React.createElement("span", { className: "font-mono" }, cloudEmail)), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-1.5" }, /* @__PURE__ */ React.createElement("button", { onClick: onCloudSave, className: "flex-1 py-2 rounded-sm border border-[#5B7F5E] text-[#5B7F5E] text-[12px] font-semibold bg-white" }, "Sync now"), /* @__PURE__ */ React.createElement("button", { onClick: onCloudLoad, className: "flex-1 py-2 rounded-sm border border-[#4C6B8A] text-[#4C6B8A] text-[12px] font-semibold bg-white" }, "Load from cloud")), /* @__PURE__ */ React.createElement("button", { onClick: () => setCloudEditing(true), className: "text-[11px] text-[#948C82] underline" }, "Change email / URL"))))));
+}
+function AddAreaForm({ onSave, onCancel, confirmFn }) {
+  const [name, setName] = useState("");
+  const safeCancel = async () => {
+    if (name.trim()) {
+      const ok = await confirmFn("Discard this area? What you typed will not be saved.");
+      if (!ok) return;
+    }
+    onCancel();
+  };
+  return /* @__PURE__ */ React.createElement("div", { className: "pb-10" }, /* @__PURE__ */ React.createElement(TopBar, { title: "New Area", onBack: safeCancel }), /* @__PURE__ */ React.createElement("div", { className: "px-4 pt-4" }, /* @__PURE__ */ React.createElement(Field, { label: "Area name *" }, /* @__PURE__ */ React.createElement("input", { autoFocus: true, value: name, onChange: (e) => setName(e.target.value), placeholder: "e.g. Vadapalani, T. Nagar", className: inputCls })), /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      onClick: () => name.trim() && onSave(name.trim()),
+      disabled: !name.trim(),
+      className: "w-full py-3 rounded-sm text-white font-semibold text-[14px] disabled:opacity-40",
+      style: { background: "#D81E2C", fontFamily: "'Space Grotesk', sans-serif" }
+    },
+    "Save area"
+  )));
+}
+function SiteCard({ site, onOpen }) {
+  const s = STATUS[site.leadStatus] || STATUS.cold;
+  const lv = latestVisit(site);
+  return /* @__PURE__ */ React.createElement("button", { onClick: () => onOpen(site.id), className: "w-full text-left relative bg-white flex overflow-hidden mb-3 shadow-sm active:scale-[0.99] transition-transform", style: { borderRadius: "2px" } }, /* @__PURE__ */ React.createElement("div", { className: "w-3 shrink-0", style: { background: s.color } }), site.sitePhoto && /* @__PURE__ */ React.createElement("img", { src: site.sitePhoto, className: "w-20 h-auto object-cover border-t border-b border-[#E4DCCF]" }), /* @__PURE__ */ React.createElement("div", { className: "flex-1 px-3 py-3 border-t border-b border-r border-[#E4DCCF]" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-start justify-between gap-2" }, /* @__PURE__ */ React.createElement("div", { className: "min-w-0" }, /* @__PURE__ */ React.createElement("div", { className: "font-semibold text-[15px] text-[#221D1B] truncate", style: { fontFamily: "'Space Grotesk', sans-serif" } }, site.siteName), /* @__PURE__ */ React.createElement("div", { className: "text-[12px] text-[#756D66] mt-0.5 flex items-center gap-1 truncate" }, /* @__PURE__ */ React.createElement(MapPin, { size: 11, className: "shrink-0" }), " ", site.address || "no address")), /* @__PURE__ */ React.createElement("div", { className: "flex flex-col items-end gap-1 shrink-0" }, /* @__PURE__ */ React.createElement(Chip, { status: site.leadStatus }), site.siteType && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] font-semibold px-1.5 py-0.5 rounded-sm bg-[#F0EAE0] text-[#756D66]" }, site.siteType))), /* @__PURE__ */ React.createElement("div", { className: "mt-2 flex items-center justify-between" }, /* @__PURE__ */ React.createElement("span", { className: "text-[11px] text-[#948C82] font-mono" }, "last visit: ", lv ? fmtDate(lv.date) : "none yet"), /* @__PURE__ */ React.createElement(FollowBadge, { site }))));
+}
+function AreaSites({ area, sites, onOpen, onAddSite, onBack }) {
+  const list = Object.values(sites).filter((s) => s.areaId === area.id).sort((a, b) => {
+    const fa = followUpInfo(a), fb = followUpInfo(b);
+    if (fa && fb) return fb.diff - fa.diff;
+    if (fa) return -1;
+    if (fb) return 1;
+    return (b.createdAt || "").localeCompare(a.createdAt || "");
+  });
+  return /* @__PURE__ */ React.createElement("div", { className: "pb-24" }, /* @__PURE__ */ React.createElement(TopBar, { title: area.name, sub: `${list.length} site${list.length !== 1 ? "s" : ""}`, onBack }), /* @__PURE__ */ React.createElement("div", { className: "px-4 pt-4" }, list.length === 0 && /* @__PURE__ */ React.createElement("div", { className: "text-center py-16 text-[#948C82]" }, /* @__PURE__ */ React.createElement(Palette, { size: 28, className: "mx-auto mb-2 opacity-40" }), /* @__PURE__ */ React.createElement("div", { className: "text-[13px]" }, "No sites in this area yet.")), list.map((s) => /* @__PURE__ */ React.createElement(SiteCard, { key: s.id, site: s, onOpen }))), /* @__PURE__ */ React.createElement("button", { onClick: onAddSite, className: "fixed bottom-6 right-5 flex items-center gap-2 px-5 h-14 rounded-full shadow-lg active:scale-95 transition-transform text-white font-semibold text-[13px]", style: { background: "#D81E2C", fontFamily: "'Space Grotesk', sans-serif" } }, /* @__PURE__ */ React.createElement(Plus, { size: 18 }), " Add site"));
+}
+function AddSiteForm({ areaName, initial, onSave, onCancel, confirmFn, onPreview, onCheckPhone }) {
+  const isEdit = !!initial;
+  const [siteName, setSiteName] = useState((initial == null ? void 0 : initial.siteName) || "");
+  const [siteType, setSiteType] = useState((initial == null ? void 0 : initial.siteType) || "");
+  const [address, setAddress] = useState((initial == null ? void 0 : initial.address) || "");
+  const [siteNotes, setSiteNotes] = useState((initial == null ? void 0 : initial.siteNotes) || "");
+  const [createdAtDraft, setCreatedAtDraft] = useState((initial == null ? void 0 : initial.createdAt) || todayISO());
+  const [lat, setLat] = useState((initial == null ? void 0 : initial.lat) || "");
+  const [lng, setLng] = useState((initial == null ? void 0 : initial.lng) || "");
+  const [locBusy, setLocBusy] = useState(false);
+  const [locErr, setLocErr] = useState("");
+  const [ocrBusy, setOcrBusy] = useState(false);
+  const [ocrErr, setOcrErr] = useState("");
+  const ocrReady = useTesseract();
+  const [sitePhoto, setSitePhoto] = useState((initial == null ? void 0 : initial.sitePhoto) || null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [contacts, setContacts] = useState(
+    (initial == null ? void 0 : initial.contacts) || Object.fromEntries(CONTACT_ROLES.map((r) => [r.key, { name: "", phone: "" }]))
+  );
+  const [extraContacts, setExtraContacts] = useState((initial == null ? void 0 : initial.extraContacts) || []);
+  const cameraRef = useRef(null);
+  const galleryRef = useRef(null);
+  const setContact = (key, field) => (e) => setContacts((c) => ({ ...c, [key]: { ...c[key], [field]: e.target.value } }));
+  const setExtraField = (id, field) => (e) => setExtraContacts((list) => list.map((c) => c.id === id ? { ...c, [field]: e.target.value } : c));
+  const addExtraContact = () => setExtraContacts((list) => [...list, { id: uid(), name: "", phone: "", notes: "" }]);
+  const removeExtraContact = (id) => setExtraContacts((list) => list.filter((c) => c.id !== id));
+  const handlePhoneBlur = async (phone) => {
+    if (!phone || !phone.trim()) return;
+    const match = onCheckPhone(phone.trim(), initial == null ? void 0 : initial.id);
+    if (match) {
+      await confirmFn(`This number already exists in site details: "${match.siteName}". Do you want to continue to enter details?`);
+    }
+  };
+  const useLocation = () => {
+    if (!navigator.geolocation) {
+      setLocErr("Location is not supported in this browser.");
+      return;
+    }
+    setLocErr("");
+    setLocBusy(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLat(pos.coords.latitude.toFixed(6));
+        setLng(pos.coords.longitude.toFixed(6));
+        setLocBusy(false);
+      },
+      (err) => {
+        setLocBusy(false);
+        if (err.code === 1) setLocErr("Location permission denied. Allow location access for this page in your browser settings, or type lat/lng manually.");
+        else if (err.code === 2) setLocErr("Location unavailable right now. Try again or type lat/lng manually.");
+        else setLocErr("Could not get location in time. Try again or type lat/lng manually.");
+      },
+      { enableHighAccuracy: true, timeout: 1e4, maximumAge: 3e4 }
+    );
+  };
+  const fetchLocationFromPhoto = async () => {
+    if (!sitePhoto) {
+      setOcrErr("Add a site photo first \u2014 the location is read from the photo's watermark.");
+      return;
+    }
+    if (!ocrReady || !window.Tesseract) {
+      setOcrErr("OCR tool is still loading \u2014 wait a moment and try again.");
+      return;
+    }
+    setOcrErr("");
+    setOcrBusy(true);
+    try {
+      const worker = await window.Tesseract.createWorker("eng");
+      const { data } = await worker.recognize(sitePhoto);
+      await worker.terminate();
+      const found = parseLatLngFromText(data.text || "");
+      if (found) {
+        setLat(found.lat);
+        setLng(found.lng);
+      } else {
+        setOcrErr("Could not find lat/lng text on this photo. Make sure the GPS camera watermark is clearly visible, or enter coordinates manually.");
+      }
+    } catch (err) {
+      setOcrErr("Could not read the photo. Try again or enter coordinates manually.");
+    }
+    setOcrBusy(false);
+  };
+  const onPhoto = async (e) => {
+    var _a;
+    const f = (_a = e.target.files) == null ? void 0 : _a[0];
+    if (!f) return;
+    setPhotoBusy(true);
+    try {
+      setSitePhoto(await compressImage(f, 1e3, 0.65));
+    } catch (err) {
+    }
+    setPhotoBusy(false);
+    e.target.value = "";
+  };
+  const submit = () => {
+    if (!siteName.trim()) return;
+    onSave({ siteName: siteName.trim(), siteType, address: address.trim(), siteNotes: siteNotes.trim(), createdAt: createdAtDraft, lat, lng, sitePhoto, contacts, extraContacts: extraContacts.filter((c) => c.name.trim() || c.phone.trim() || c.notes.trim()) });
+  };
+  const hasData = siteName.trim() || address.trim() || siteNotes.trim() || sitePhoto || lat || lng || Object.values(contacts).some((c) => c.name.trim() || c.phone.trim()) || extraContacts.some((c) => c.name.trim() || c.phone.trim() || c.notes.trim());
+  const safeCancel = async () => {
+    if (!isEdit && hasData) {
+      const ok = await confirmFn("Discard this site? What you entered will not be saved.");
+      if (!ok) return;
+    }
+    onCancel();
+  };
+  return /* @__PURE__ */ React.createElement("div", { className: "pb-10" }, /* @__PURE__ */ React.createElement(TopBar, { title: isEdit ? "Edit Site" : "New Site", sub: areaName, onBack: safeCancel }), /* @__PURE__ */ React.createElement("div", { className: "px-4 pt-4" }, /* @__PURE__ */ React.createElement(Field, { label: "Site photo" }, sitePhoto ? /* @__PURE__ */ React.createElement("div", { className: "relative w-full h-40 rounded-sm overflow-hidden mb-1" }, /* @__PURE__ */ React.createElement("img", { src: sitePhoto, onClick: () => onPreview(sitePhoto), className: "w-full h-full object-cover" }), /* @__PURE__ */ React.createElement("button", { onClick: () => setSitePhoto(null), className: "absolute top-2 right-2 bg-black/60 text-white p-1 rounded-sm" }, /* @__PURE__ */ React.createElement(X, { size: 14 }))) : /* @__PURE__ */ React.createElement("div", { className: "flex gap-2" }, /* @__PURE__ */ React.createElement("button", { onClick: () => {
+    var _a;
+    return (_a = cameraRef.current) == null ? void 0 : _a.click();
+  }, className: "flex-1 h-28 rounded-sm border border-dashed border-[#948C82] flex flex-col items-center justify-center text-[#948C82] gap-1" }, /* @__PURE__ */ React.createElement(Camera, { size: 20 }), /* @__PURE__ */ React.createElement("span", { className: "text-[12px]" }, photoBusy ? "processing..." : "Take photo")), /* @__PURE__ */ React.createElement("button", { onClick: () => {
+    var _a;
+    return (_a = galleryRef.current) == null ? void 0 : _a.click();
+  }, className: "flex-1 h-28 rounded-sm border border-dashed border-[#948C82] flex flex-col items-center justify-center text-[#948C82] gap-1" }, /* @__PURE__ */ React.createElement(ImageIcon, { size: 20 }), /* @__PURE__ */ React.createElement("span", { className: "text-[12px]" }, "Upload from gallery"))), /* @__PURE__ */ React.createElement("div", { className: "text-[11px] text-[#948C82] mt-1.5" }, 'If your camera app stamps GPS coordinates on the photo, use "Fetch location from photo" below to read them automatically.'), /* @__PURE__ */ React.createElement("input", { ref: cameraRef, type: "file", accept: "image/*", capture: "environment", onChange: onPhoto, className: "hidden" }), /* @__PURE__ */ React.createElement("input", { ref: galleryRef, type: "file", accept: "image/*", onChange: onPhoto, className: "hidden" })), /* @__PURE__ */ React.createElement(Field, { label: "Site name *" }, /* @__PURE__ */ React.createElement("input", { value: siteName, onChange: (e) => setSiteName(e.target.value), placeholder: "e.g. Anand Residency", className: inputCls })), /* @__PURE__ */ React.createElement(Field, { label: "Site type" }, /* @__PURE__ */ React.createElement("div", { className: "flex gap-2" }, SITE_TYPES.map((t) => /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      key: t,
+      type: "button",
+      onClick: () => setSiteType(siteType === t ? "" : t),
+      className: "flex-1 py-2 rounded-sm text-[13px] font-semibold border",
+      style: {
+        borderColor: siteType === t ? "#221D1B" : "#E4DCCF",
+        background: siteType === t ? "#221D1B" : "white",
+        color: siteType === t ? "white" : "#756D66"
+      }
+    },
+    t
+  )))), /* @__PURE__ */ React.createElement(Field, { label: "Address / landmark" }, /* @__PURE__ */ React.createElement("input", { value: address, onChange: (e) => setAddress(e.target.value), className: inputCls })), /* @__PURE__ */ React.createElement(Field, { label: "Location (lat, lng)" }, /* @__PURE__ */ React.createElement("div", { className: "flex gap-2" }, /* @__PURE__ */ React.createElement("input", { value: lat, onChange: (e) => setLat(e.target.value), placeholder: "lat", className: inputCls + " w-1/2 font-mono text-[13px]" }), /* @__PURE__ */ React.createElement("input", { value: lng, onChange: (e) => setLng(e.target.value), placeholder: "lng", className: inputCls + " w-1/2 font-mono text-[13px]" })), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mt-2 flex-wrap" }, /* @__PURE__ */ React.createElement("button", { onClick: fetchLocationFromPhoto, disabled: ocrBusy, className: "flex items-center gap-1.5 text-[12px] font-semibold text-white rounded-sm px-3 py-1.5 disabled:opacity-50", style: { background: "#221D1B" } }, /* @__PURE__ */ React.createElement(Camera, { size: 13 }), " ", ocrBusy ? "Reading photo..." : "Fetch location from photo"), /* @__PURE__ */ React.createElement("button", { onClick: useLocation, disabled: locBusy, className: "flex items-center gap-1.5 text-[12px] font-semibold text-[#4C6B8A] border border-[#4C6B8A]/30 rounded-sm px-3 py-1.5 disabled:opacity-50" }, /* @__PURE__ */ React.createElement(Navigation, { size: 13 }), " ", locBusy ? "Getting location..." : "Use current location")), ocrErr && /* @__PURE__ */ React.createElement("div", { className: "mt-2 text-[11px] text-[#B34B3C] bg-[#B34B3C]/10 rounded-sm px-2.5 py-2 flex items-start gap-1.5" }, /* @__PURE__ */ React.createElement(AlertCircle, { size: 13, className: "shrink-0 mt-0.5" }), " ", ocrErr), locErr && /* @__PURE__ */ React.createElement("div", { className: "mt-2 text-[11px] text-[#B34B3C] bg-[#B34B3C]/10 rounded-sm px-2.5 py-2 flex items-start gap-1.5" }, /* @__PURE__ */ React.createElement(AlertCircle, { size: 13, className: "shrink-0 mt-0.5" }), " ", locErr)), /* @__PURE__ */ React.createElement(Field, { label: "Notes" }, /* @__PURE__ */ React.createElement(
+    "textarea",
+    {
+      value: siteNotes,
+      onChange: (e) => setSiteNotes(e.target.value),
+      rows: 3,
+      placeholder: "Any general notes about this site...",
+      className: inputCls + " resize-none"
+    }
+  )), /* @__PURE__ */ React.createElement(Field, { label: "Site creation date" }, /* @__PURE__ */ React.createElement("input", { type: "date", value: createdAtDraft, onChange: (e) => setCreatedAtDraft(e.target.value), className: inputCls + " font-mono" })), /* @__PURE__ */ React.createElement("div", { className: "text-[11px] font-bold uppercase tracking-wide text-[#756D66] mt-5 mb-2", style: { fontFamily: "'IBM Plex Mono', monospace" } }, "Contacts"), CONTACT_ROLES.map((r) => /* @__PURE__ */ React.createElement("div", { key: r.key, className: "mb-3 bg-white border border-[#E4DCCF] rounded-sm p-3" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 mb-2 text-[12px] font-semibold text-[#221D1B]" }, /* @__PURE__ */ React.createElement(r.icon, { size: 13, className: "text-[#948C82]" }), " ", r.label), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2" }, /* @__PURE__ */ React.createElement("input", { value: contacts[r.key].name, onChange: setContact(r.key, "name"), placeholder: "Name", className: inputCls + " text-[13px]" }), /* @__PURE__ */ React.createElement("input", { value: contacts[r.key].phone, onChange: setContact(r.key, "phone"), onBlur: (e) => handlePhoneBlur(e.target.value), placeholder: "Phone", inputMode: "tel", className: inputCls + " text-[13px] font-mono" })))), extraContacts.map((c) => /* @__PURE__ */ React.createElement("div", { key: c.id, className: "mb-3 bg-white border border-[#E4DCCF] rounded-sm p-3" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-2" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 text-[12px] font-semibold text-[#221D1B]" }, /* @__PURE__ */ React.createElement(Contact, { size: 13, className: "text-[#948C82]" }), " Other contact"), /* @__PURE__ */ React.createElement("button", { onClick: () => removeExtraContact(c.id), className: "text-[#B34B3C]" }, /* @__PURE__ */ React.createElement(X, { size: 14 }))), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-2" }, /* @__PURE__ */ React.createElement("input", { value: c.name, onChange: setExtraField(c.id, "name"), placeholder: "Name", className: inputCls + " text-[13px]" }), /* @__PURE__ */ React.createElement("input", { value: c.phone, onChange: setExtraField(c.id, "phone"), onBlur: (e) => handlePhoneBlur(e.target.value), placeholder: "Phone", inputMode: "tel", className: inputCls + " text-[13px] font-mono" })), /* @__PURE__ */ React.createElement(
+    "textarea",
+    {
+      value: c.notes,
+      onChange: setExtraField(c.id, "notes"),
+      rows: 2,
+      placeholder: "Notes about this contact...",
+      className: inputCls + " text-[13px] resize-none"
+    }
+  ))), /* @__PURE__ */ React.createElement("button", { onClick: addExtraContact, className: "w-full mb-3 flex items-center justify-center gap-1.5 text-[12px] font-semibold text-[#4C6B8A] border border-dashed border-[#4C6B8A]/40 rounded-sm px-3 py-2.5" }, /* @__PURE__ */ React.createElement(Plus, { size: 14 }), " Add new contact"), /* @__PURE__ */ React.createElement("button", { onClick: submit, disabled: !siteName.trim(), className: "w-full py-3 rounded-sm text-white font-semibold text-[14px] disabled:opacity-40 mt-2", style: { background: "#D81E2C", fontFamily: "'Space Grotesk', sans-serif" } }, isEdit ? "Save changes" : "Save site")));
+}
+function AddVisitForm({ site, onSave, onCancel, confirmFn, onPreview }) {
+  const [date, setDate] = useState(todayISO());
+  const [painters, setPainters] = useState([{ id: uid(), name: "", phone: "" }]);
+  const [notes, setNotes] = useState("");
+  const [followUpDate, setFollowUpDate] = useState("");
+  const [photos, setPhotos] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const cameraRef = useRef(null);
+  const galleryRef = useRef(null);
+  const knownContacts = [
+    ...CONTACT_ROLES.filter((r) => {
+      var _a, _b, _c, _d;
+      return ((_b = (_a = site.contacts) == null ? void 0 : _a[r.key]) == null ? void 0 : _b.name) || ((_d = (_c = site.contacts) == null ? void 0 : _c[r.key]) == null ? void 0 : _d.phone);
+    }).map((r) => ({
+      label: `${site.contacts[r.key].name || "Unnamed"} \u2014 ${r.label}`,
+      name: site.contacts[r.key].name || "",
+      phone: site.contacts[r.key].phone || ""
+    })),
+    ...(site.extraContacts || []).filter((c) => c.name || c.phone).map((c) => ({
+      label: `${c.name || "Unnamed"} \u2014 Other contact`,
+      name: c.name || "",
+      phone: c.phone || ""
+    }))
+  ];
+  const setPainterField = (id, field) => (e) => setPainters((list) => list.map((p) => p.id === id ? { ...p, [field]: e.target.value } : p));
+  const fillFromKnown = (id) => (e) => {
+    const idx = e.target.value;
+    if (idx === "") return;
+    const c = knownContacts[Number(idx)];
+    if (c) setPainters((list) => list.map((p) => p.id === id ? { ...p, name: c.name, phone: c.phone } : p));
+    e.target.value = "";
+  };
+  const addPainterRow = () => setPainters((list) => [...list, { id: uid(), name: "", phone: "" }]);
+  const removePainterRow = (id) => setPainters((list) => list.length > 1 ? list.filter((p) => p.id !== id) : list);
+  const onFiles = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    setBusy(true);
+    const compressed = [];
+    for (const f of files.slice(0, 6)) {
+      try {
+        compressed.push(await compressImage(f));
+      } catch (err) {
+      }
+    }
+    setPhotos((p) => [...p, ...compressed]);
+    setBusy(false);
+    e.target.value = "";
+  };
+  const removePhoto = (i) => setPhotos((p) => p.filter((_, idx) => idx !== i));
+  const submit = () => {
+    const paintersMet = painters.filter((p) => p.name.trim() || p.phone.trim()).map((p) => ({ name: p.name.trim(), phone: p.phone.trim() }));
+    onSave({ id: uid(), date, paintersMet, notes, followUpDate: followUpDate || null, photos });
+  };
+  const hasData = painters.some((p) => p.name.trim() || p.phone.trim()) || notes.trim() || followUpDate || photos.length > 0;
+  const safeCancel = async () => {
+    if (hasData) {
+      const ok = await confirmFn("Discard this visit log? What you entered will not be saved.");
+      if (!ok) return;
+    }
+    onCancel();
+  };
+  return /* @__PURE__ */ React.createElement("div", { className: "pb-10" }, /* @__PURE__ */ React.createElement(TopBar, { title: "Log visit", sub: site.siteName, onBack: safeCancel }), /* @__PURE__ */ React.createElement("div", { className: "px-4 pt-4" }, /* @__PURE__ */ React.createElement(Field, { label: "Visit date" }, /* @__PURE__ */ React.createElement("input", { type: "date", value: date, onChange: (e) => setDate(e.target.value), className: inputCls + " font-mono" })), /* @__PURE__ */ React.createElement("div", { className: "mb-3" }, /* @__PURE__ */ React.createElement("label", { className: "block text-[11px] font-bold uppercase tracking-wide text-[#756D66] mb-1", style: { fontFamily: "'IBM Plex Mono', monospace" } }, "Contact persons met"), painters.map((p, idx) => /* @__PURE__ */ React.createElement("div", { key: p.id, className: "mb-2" }, knownContacts.length > 0 && /* @__PURE__ */ React.createElement(
+    "select",
+    {
+      onChange: fillFromKnown(p.id),
+      defaultValue: "",
+      className: "w-full border border-[#E4DCCF] rounded-sm px-3 py-2 text-[12.5px] outline-none focus:border-[#D81E2C] bg-white mb-1.5 text-[#756D66]"
+    },
+    /* @__PURE__ */ React.createElement("option", { value: "" }, "Pick from this site's contacts \u2014 or type below"),
+    knownContacts.map((c, i) => /* @__PURE__ */ React.createElement("option", { key: i, value: i }, c.label))
+  ), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2" }, /* @__PURE__ */ React.createElement("input", { value: p.name, onChange: setPainterField(p.id, "name"), placeholder: "Contact person name", className: inputCls + " text-[13px]" }), /* @__PURE__ */ React.createElement("input", { value: p.phone, onChange: setPainterField(p.id, "phone"), placeholder: "Phone", inputMode: "tel", className: inputCls + " text-[13px] font-mono" }), painters.length > 1 && /* @__PURE__ */ React.createElement("button", { onClick: () => removePainterRow(p.id), className: "shrink-0 w-9 h-9 rounded-sm border border-[#E4DCCF] flex items-center justify-center text-[#B34B3C]" }, /* @__PURE__ */ React.createElement(X, { size: 14 }))))), /* @__PURE__ */ React.createElement("button", { onClick: addPainterRow, className: "flex items-center gap-1.5 text-[12px] font-semibold text-[#4C6B8A] border border-[#4C6B8A]/30 rounded-sm px-3 py-1.5" }, /* @__PURE__ */ React.createElement(Plus, { size: 13 }), " Add another contact")), /* @__PURE__ */ React.createElement(Field, { label: "Notes \u2014 what service / what happened" }, /* @__PURE__ */ React.createElement("textarea", { value: notes, onChange: (e) => setNotes(e.target.value), rows: 4, placeholder: "e.g. Discussed exterior emulsion, gave sample card", className: inputCls + " resize-none" })), /* @__PURE__ */ React.createElement(Field, { label: "Next follow-up date" }, /* @__PURE__ */ React.createElement("input", { type: "date", value: followUpDate, onChange: (e) => setFollowUpDate(e.target.value), className: inputCls + " font-mono" })), /* @__PURE__ */ React.createElement(Field, { label: "Visit photos" }, /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap gap-2 mb-1" }, photos.map((p, i) => /* @__PURE__ */ React.createElement("div", { key: i, className: "relative w-16 h-16 rounded-sm overflow-hidden border border-[#E4DCCF]" }, /* @__PURE__ */ React.createElement("img", { src: p, onClick: () => onPreview(p), className: "w-full h-full object-cover" }), /* @__PURE__ */ React.createElement("button", { onClick: () => removePhoto(i), className: "absolute top-0 right-0 bg-black/60 text-white p-0.5" }, /* @__PURE__ */ React.createElement(X, { size: 11 })))), /* @__PURE__ */ React.createElement("button", { onClick: () => {
+    var _a;
+    return (_a = cameraRef.current) == null ? void 0 : _a.click();
+  }, className: "w-16 h-16 rounded-sm border border-dashed border-[#948C82] flex items-center justify-center text-[#948C82]" }, /* @__PURE__ */ React.createElement(Camera, { size: 18 })), /* @__PURE__ */ React.createElement("button", { onClick: () => {
+    var _a;
+    return (_a = galleryRef.current) == null ? void 0 : _a.click();
+  }, className: "w-16 h-16 rounded-sm border border-dashed border-[#948C82] flex items-center justify-center text-[#948C82]" }, /* @__PURE__ */ React.createElement(ImageIcon, { size: 18 }))), busy && /* @__PURE__ */ React.createElement("div", { className: "text-[11px] text-[#948C82]" }, "compressing photos..."), /* @__PURE__ */ React.createElement("input", { ref: cameraRef, type: "file", accept: "image/*", multiple: true, capture: "environment", onChange: onFiles, className: "hidden" }), /* @__PURE__ */ React.createElement("input", { ref: galleryRef, type: "file", accept: "image/*", multiple: true, onChange: onFiles, className: "hidden" })), /* @__PURE__ */ React.createElement("button", { onClick: submit, className: "w-full py-3 rounded-sm text-white font-semibold text-[14px]", style: { background: "#D81E2C", fontFamily: "'Space Grotesk', sans-serif" } }, "Save visit log")));
+}
+function SiteDetail({ site, area, onBack, onAddVisit, onEdit, onSetStatus, onDelete, onPhoto, onRenameSite, onSetLostReason, onLiveNav }) {
+  const visits = [...site.visits || []].sort((a, b) => a.date < b.date ? 1 : -1);
+  const hasLoc = site.lat && site.lng;
+  const titleLongPress = useLongPress(() => onRenameSite(site.id));
+  const [lostReasonDraft, setLostReasonDraft] = useState(site.lostReason || "");
+  useEffect(() => {
+    setLostReasonDraft(site.lostReason || "");
+  }, [site.id, site.lostReason]);
+  const buildShareText = () => {
+    const lines = [];
+    lines.push(`\u{1F4CD} ${site.siteName}`);
+    if (site.siteType) lines.push(`Type: ${site.siteType}`);
+    if (area == null ? void 0 : area.name) lines.push(area.name);
+    if (site.address) lines.push(site.address);
+    lines.push(`Status: ${(STATUS[site.leadStatus] || STATUS.cold).label}`);
+    if (site.leadStatus === "lost" && site.lostReason) lines.push(`Reason: ${site.lostReason}`);
+    const contactLines = [];
+    CONTACT_ROLES.forEach((r) => {
+      var _a;
+      const c = (_a = site.contacts) == null ? void 0 : _a[r.key];
+      if (c && (c.name || c.phone)) contactLines.push(`${r.label}: ${c.name || "-"}${c.phone ? " - " + c.phone : ""}`);
+    });
+    (site.extraContacts || []).forEach((c) => {
+      if (c.name || c.phone) contactLines.push(`${c.name || "Contact"}: ${c.phone || "-"}${c.notes ? " (" + c.notes + ")" : ""}`);
+    });
+    if (contactLines.length > 0) {
+      lines.push("");
+      lines.push("Contacts:");
+      lines.push(...contactLines);
+    }
+    if (hasLoc) {
+      lines.push("");
+      lines.push(`Location: ${mapsNavUrl(site.lat, site.lng)}`);
+    }
+    return lines.join("\n");
+  };
+  const shareOnWhatsApp = async () => {
+    const text = buildShareText();
+    if (site.sitePhoto && navigator.canShare) {
+      try {
+        const resp = await fetch(site.sitePhoto);
+        const blob = await resp.blob();
+        const file = new File([blob], "site-photo.jpg", { type: blob.type || "image/jpeg" });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: site.siteName, text });
+          return;
+        }
+      } catch (err) {
+      }
+    }
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
+  };
+  return /* @__PURE__ */ React.createElement("div", { className: "pb-24" }, /* @__PURE__ */ React.createElement(
+    TopBar,
+    {
+      title: /* @__PURE__ */ React.createElement("span", { ...titleLongPress, className: "select-none" }, site.siteName),
+      sub: area == null ? void 0 : area.name,
+      onBack,
+      right: /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1" }, /* @__PURE__ */ React.createElement("button", { onClick: onEdit, className: "p-1.5 text-[#4C6B8A]" }, /* @__PURE__ */ React.createElement(Pencil, { size: 17 })), /* @__PURE__ */ React.createElement("button", { onClick: () => onDelete(site.id), className: "p-1.5 text-[#B34B3C]" }, /* @__PURE__ */ React.createElement(Trash2, { size: 17 })))
+    }
+  ), site.sitePhoto && /* @__PURE__ */ React.createElement("img", { src: site.sitePhoto, onClick: () => onPhoto(site.sitePhoto), className: "w-full h-44 object-cover" }), /* @__PURE__ */ React.createElement("div", { className: "px-4 pt-4" }, /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      onClick: shareOnWhatsApp,
+      className: "w-full flex items-center justify-center gap-2 py-3 rounded-sm text-white font-semibold text-[14px] mb-4",
+      style: { background: "#25D366" }
+    },
+    /* @__PURE__ */ React.createElement("span", { style: { fontSize: 16, lineHeight: 1 } }, "\u{1F4AC}"),
+    " Share on WhatsApp"
+  ), /* @__PURE__ */ React.createElement("div", { className: "bg-white border border-[#E4DCCF] rounded-sm p-4 mb-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-3" }, /* @__PURE__ */ React.createElement("span", { className: "text-[11px] font-bold uppercase tracking-wide text-[#756D66]", style: { fontFamily: "'IBM Plex Mono', monospace" } }, "Lead status"), /* @__PURE__ */ React.createElement(Chip, { status: site.leadStatus })), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 flex-wrap mb-4" }, Object.entries(STATUS).map(([key, s]) => /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      key,
+      onClick: () => onSetStatus(site.id, key),
+      className: "px-2.5 py-1 rounded-sm text-[11px] font-semibold border",
+      style: { borderColor: s.color, color: site.leadStatus === key ? "white" : s.color, background: site.leadStatus === key ? s.color : "transparent" }
+    },
+    s.label
+  ))), site.leadStatus === "lost" && /* @__PURE__ */ React.createElement("div", { className: "mb-4" }, /* @__PURE__ */ React.createElement("label", { className: "block text-[11px] font-bold uppercase tracking-wide text-[#756D66] mb-1", style: { fontFamily: "'IBM Plex Mono', monospace" } }, "Reason for loss"), /* @__PURE__ */ React.createElement(
+    "textarea",
+    {
+      value: lostReasonDraft,
+      onChange: (e) => setLostReasonDraft(e.target.value),
+      onBlur: () => onSetLostReason(site.id, lostReasonDraft.trim()),
+      rows: 2,
+      placeholder: "e.g. Went with another brand, budget mismatch...",
+      className: "w-full border border-[#E4DCCF] rounded-sm px-3 py-2 text-[13px] outline-none focus:border-[#D81E2C] bg-white resize-none"
+    }
+  )), site.siteType && /* @__PURE__ */ React.createElement("div", { className: "mb-2" }, /* @__PURE__ */ React.createElement("span", { className: "text-[11px] font-semibold px-2 py-0.5 rounded-sm bg-[#F0EAE0] text-[#756D66]" }, site.siteType)), site.address && /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 text-[13px] mb-1.5" }, /* @__PURE__ */ React.createElement(MapPin, { size: 13, className: "text-[#948C82]" }), " ", site.address), hasLoc && /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mt-2 gap-2" }, /* @__PURE__ */ React.createElement("span", { className: "text-[12px] font-mono text-[#756D66] truncate" }, site.lat, ", ", site.lng), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 shrink-0" }, /* @__PURE__ */ React.createElement("button", { onClick: onLiveNav, className: "flex items-center gap-1.5 text-[12px] font-semibold text-white px-3 py-1.5 rounded-sm", style: { background: "#2563EB" } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, lineHeight: 1 } }, "\u{1F9ED}"), " Live nav"), /* @__PURE__ */ React.createElement(
+    "a",
+    {
+      href: mapsNavUrl(site.lat, site.lng),
+      target: "_blank",
+      rel: "noopener noreferrer",
+      className: "flex items-center gap-1.5 text-[12px] font-semibold text-white px-3 py-1.5 rounded-sm",
+      style: { background: "#4C6B8A" }
+    },
+    /* @__PURE__ */ React.createElement(Navigation, { size: 13 }),
+    " Navigate"
+  ))), site.siteNotes && /* @__PURE__ */ React.createElement("div", { className: "mt-3 pt-3 border-t border-[#E4DCCF]" }, /* @__PURE__ */ React.createElement("div", { className: "text-[10.5px] font-bold uppercase tracking-wide text-[#948C82] mb-1", style: { fontFamily: "'IBM Plex Mono', monospace" } }, "Notes"), /* @__PURE__ */ React.createElement("div", { className: "text-[13px] text-[#221D1B] whitespace-pre-wrap" }, site.siteNotes)), site.createdAt && /* @__PURE__ */ React.createElement("div", { className: "mt-3 pt-3 border-t border-[#E4DCCF] flex items-center gap-1.5 text-[11px] text-[#948C82]" }, /* @__PURE__ */ React.createElement(Calendar, { size: 12 }), " Created on ", fmtDate(site.createdAt))), /* @__PURE__ */ React.createElement("div", { className: "text-[11px] font-bold uppercase tracking-wide text-[#756D66] mb-2", style: { fontFamily: "'IBM Plex Mono', monospace" } }, "Contacts"), /* @__PURE__ */ React.createElement("div", { className: "bg-white border border-[#E4DCCF] rounded-sm mb-4 divide-y divide-[#E4DCCF]" }, CONTACT_ROLES.filter((r) => {
+    var _a, _b, _c, _d;
+    return ((_b = (_a = site.contacts) == null ? void 0 : _a[r.key]) == null ? void 0 : _b.name) || ((_d = (_c = site.contacts) == null ? void 0 : _c[r.key]) == null ? void 0 : _d.phone);
+  }).map((r) => {
+    const c = site.contacts[r.key];
+    return /* @__PURE__ */ React.createElement("div", { key: r.key, className: "flex items-center justify-between px-3 py-2.5" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 min-w-0" }, /* @__PURE__ */ React.createElement(r.icon, { size: 14, className: "text-[#948C82] shrink-0" }), /* @__PURE__ */ React.createElement("div", { className: "min-w-0" }, /* @__PURE__ */ React.createElement("div", { className: "text-[13px] font-medium truncate" }, c.name || r.label), /* @__PURE__ */ React.createElement("div", { className: "text-[11px] text-[#948C82]" }, r.label))), c.phone && /* @__PURE__ */ React.createElement("a", { href: `tel:${c.phone}`, className: "flex items-center gap-1 text-[12px] font-semibold text-[#5B7F5E] shrink-0 ml-2" }, /* @__PURE__ */ React.createElement(Phone, { size: 13 }), " ", c.phone));
+  }), (site.extraContacts || []).map((c) => /* @__PURE__ */ React.createElement("div", { key: c.id, className: "px-3 py-2.5" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 min-w-0" }, /* @__PURE__ */ React.createElement(Contact, { size: 14, className: "text-[#948C82] shrink-0" }), /* @__PURE__ */ React.createElement("div", { className: "min-w-0" }, /* @__PURE__ */ React.createElement("div", { className: "text-[13px] font-medium truncate" }, c.name || "Other contact"), /* @__PURE__ */ React.createElement("div", { className: "text-[11px] text-[#948C82]" }, "Other contact"))), c.phone && /* @__PURE__ */ React.createElement("a", { href: `tel:${c.phone}`, className: "flex items-center gap-1 text-[12px] font-semibold text-[#5B7F5E] shrink-0 ml-2" }, /* @__PURE__ */ React.createElement(Phone, { size: 13 }), " ", c.phone)), c.notes && /* @__PURE__ */ React.createElement("div", { className: "text-[12px] text-[#756D66] mt-1.5 pl-6 whitespace-pre-wrap" }, c.notes))), CONTACT_ROLES.every((r) => {
+    var _a, _b, _c, _d;
+    return !((_b = (_a = site.contacts) == null ? void 0 : _a[r.key]) == null ? void 0 : _b.name) && !((_d = (_c = site.contacts) == null ? void 0 : _c[r.key]) == null ? void 0 : _d.phone);
+  }) && (site.extraContacts || []).length === 0 && /* @__PURE__ */ React.createElement("div", { className: "px-3 py-3 text-[12px] text-[#948C82]" }, "No contacts added")), /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-2" }, /* @__PURE__ */ React.createElement("span", { className: "text-[11px] font-bold uppercase tracking-wide text-[#756D66]", style: { fontFamily: "'IBM Plex Mono', monospace" } }, "Visit history (", visits.length, ")"), /* @__PURE__ */ React.createElement(FollowBadge, { site })), visits.length === 0 && /* @__PURE__ */ React.createElement("div", { className: "text-center py-10 text-[#948C82] text-[13px] border border-dashed border-[#E4DCCF] rounded-sm" }, "No visits logged yet"), /* @__PURE__ */ React.createElement("div", { className: "relative pl-4" }, visits.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "absolute left-[3px] top-1 bottom-1 w-px bg-[#E4DCCF]" }), visits.map((v) => {
+    var _a, _b, _c;
+    return /* @__PURE__ */ React.createElement("div", { key: v.id, className: "relative mb-4" }, /* @__PURE__ */ React.createElement("div", { className: "absolute -left-4 top-1.5 w-2 h-2 rounded-full bg-[#D81E2C]" }), /* @__PURE__ */ React.createElement("div", { className: "bg-white border border-[#E4DCCF] rounded-sm p-3" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-1.5" }, /* @__PURE__ */ React.createElement("span", { className: "text-[13px] font-bold", style: { fontFamily: "'Space Grotesk', sans-serif" } }, fmtDate(v.date)), ((_a = v.paintersMet) == null ? void 0 : _a.length) > 0 && /* @__PURE__ */ React.createElement("span", { className: "text-[11px] text-[#4C6B8A] font-mono flex items-center gap-1" }, /* @__PURE__ */ React.createElement(Users, { size: 11 }), " ", v.paintersMet.length, " contact", v.paintersMet.length !== 1 ? "s" : "", " met")), ((_b = v.paintersMet) == null ? void 0 : _b.length) > 0 && /* @__PURE__ */ React.createElement("div", { className: "mb-2 space-y-1" }, v.paintersMet.map((p, i) => /* @__PURE__ */ React.createElement("div", { key: i, className: "flex items-center justify-between text-[12px] bg-[#FAF6EF] rounded-sm px-2 py-1.5" }, /* @__PURE__ */ React.createElement("span", { className: "text-[#221D1B]" }, p.name || "Unnamed contact"), p.phone && /* @__PURE__ */ React.createElement("a", { href: `tel:${p.phone}`, className: "text-[#5B7F5E] font-semibold flex items-center gap-1" }, /* @__PURE__ */ React.createElement(Phone, { size: 11 }), " ", p.phone)))), v.notes && /* @__PURE__ */ React.createElement("div", { className: "text-[13px] text-[#221D1B] mb-2 whitespace-pre-wrap" }, v.notes), v.followUpDate && /* @__PURE__ */ React.createElement("div", { className: "text-[11px] text-[#D9A441] font-mono flex items-center gap-1 mb-2" }, /* @__PURE__ */ React.createElement(Calendar, { size: 11 }), " follow-up set: ", fmtDate(v.followUpDate)), ((_c = v.photos) == null ? void 0 : _c.length) > 0 && /* @__PURE__ */ React.createElement("div", { className: "flex gap-1.5 flex-wrap" }, v.photos.map((p, i) => /* @__PURE__ */ React.createElement("img", { key: i, src: p, onClick: () => onPhoto(p), className: "w-14 h-14 object-cover rounded-sm border border-[#E4DCCF]" })))));
+  }))), /* @__PURE__ */ React.createElement("button", { onClick: onAddVisit, className: "fixed bottom-6 right-5 flex items-center gap-2 px-5 h-14 rounded-full shadow-lg active:scale-95 transition-transform text-white font-semibold text-[13px]", style: { background: "#D81E2C", fontFamily: "'Space Grotesk', sans-serif" } }, /* @__PURE__ */ React.createElement(Plus, { size: 18 }), " Log visit"));
+}
+function useLeaflet() {
+  const [ready, setReady] = useState(!!window.L);
+  useEffect(() => {
+    if (window.L) {
+      setReady(true);
+      return;
+    }
+    const css = document.createElement("link");
+    css.rel = "stylesheet";
+    css.href = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css";
+    document.head.appendChild(css);
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js";
+    script.onload = () => setReady(true);
+    document.body.appendChild(script);
+  }, []);
+  return ready;
+}
+function buildPopupHtml(s, area) {
+  const statusInfo = STATUS[s.leadStatus] || STATUS.cold;
+  const contacts = CONTACT_ROLES.filter((r) => {
+    var _a, _b, _c, _d;
+    return ((_b = (_a = s.contacts) == null ? void 0 : _a[r.key]) == null ? void 0 : _b.name) || ((_d = (_c = s.contacts) == null ? void 0 : _c[r.key]) == null ? void 0 : _d.phone);
+  });
+  const lv = latestVisit(s);
+  return `
+    <div style="width:230px;font-family:Inter,sans-serif;max-height:320px;overflow-y:auto;">
+      ${s.sitePhoto ? `<img src="${s.sitePhoto}" style="width:100%;height:90px;object-fit:cover;border-radius:2px;margin-bottom:6px;" />` : ""}
+      <div style="font-weight:700;font-size:14px;font-family:'Space Grotesk',sans-serif;color:#221D1B;">${escapeHtml(s.siteName)}</div>
+      <div style="font-size:11px;color:#948C82;margin:2px 0 6px;">${escapeHtml((area == null ? void 0 : area.name) || "")}${s.address ? " \xB7 " + escapeHtml(s.address) : ""}</div>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+        <span style="width:8px;height:8px;border-radius:50%;background:${statusInfo.color};display:inline-block;"></span>
+        <span style="font-size:11px;font-weight:600;color:${statusInfo.color};text-transform:uppercase;">${statusInfo.label}</span>
+      </div>
+      ${lv ? `<div style="font-size:11px;color:#756D66;margin-bottom:6px;">last visit: ${fmtDate(lv.date)}</div>` : `<div style="font-size:11px;color:#948C82;margin-bottom:6px;">no visits logged yet</div>`}
+      ${contacts.length ? `<div style="border-top:1px solid #E4DCCF;padding-top:6px;margin-bottom:8px;">
+        ${contacts.map((r) => {
+    const c = s.contacts[r.key];
+    return `<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:2px 0;gap:6px;">
+            <span style="color:#221D1B;">${escapeHtml(c.name || r.label)} <span style="color:#948C82;">(${escapeHtml(r.label)})</span></span>
+            ${c.phone ? `<a href="tel:${escapeHtml(c.phone)}" style="color:#5B7F5E;font-weight:600;text-decoration:none;white-space:nowrap;">${escapeHtml(c.phone)}</a>` : ""}
+          </div>`;
+  }).join("")}
+      </div>` : ""}
+      <div style="display:flex;gap:6px;">
+        <a href="${mapsNavUrl(s.lat, s.lng)}" target="_blank" rel="noopener noreferrer" style="flex:1;text-align:center;background:#4C6B8A;color:white;padding:7px 0;border-radius:2px;font-size:12px;font-weight:600;text-decoration:none;">Navigate</a>
+        <button class="st-view-btn" data-id="${s.id}" style="flex:1;background:white;border:1px solid #D81E2C;color:#D81E2C;padding:7px 0;border-radius:2px;font-size:12px;font-weight:600;">Details</button>
+      </div>
+    </div>
+  `;
+}
+const mapViewMemory = { center: null, zoom: null, filter: "all" };
+function MapView({ sites, areas, onBack, onOpenSite }) {
+  const ready = useLeaflet();
+  const mapRef = useRef(null);
+  const mapObj = useRef(null);
+  const markersRef = useRef([]);
+  const youMarkerRef = useRef(null);
+  const watchIdRef = useRef(null);
+  const onOpenSiteRef = useRef(onOpenSite);
+  useEffect(() => {
+    onOpenSiteRef.current = onOpenSite;
+  }, [onOpenSite]);
+  const [statusFilter, setStatusFilter] = useState(mapViewMemory.filter);
+  const [myPos, setMyPos] = useState(null);
+  const didInitialFit = useRef(false);
+  const allLocated = Object.values(sites).filter((s) => s.lat && s.lng);
+  const located = statusFilter === "all" ? allLocated.filter((s) => s.leadStatus !== "lost") : statusFilter === "everything" ? allLocated : allLocated.filter((s) => s.leadStatus === statusFilter);
+  useEffect(() => {
+    if (!ready || !mapRef.current || mapObj.current) return;
+    const L = window.L;
+    const map = L.map(mapRef.current, { zoomControl: true }).setView(
+      mapViewMemory.center || [20.5937, 78.9629],
+      mapViewMemory.zoom || 5
+    );
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "\xA9 OpenStreetMap contributors",
+      maxZoom: 19
+    }).addTo(map);
+    mapObj.current = map;
+    setTimeout(() => map.invalidateSize(), 150);
+    map.on("moveend", () => {
+      mapViewMemory.center = map.getCenter();
+      mapViewMemory.zoom = map.getZoom();
+    });
+    map.on("popupopen", (e) => {
+      const node = e.popup.getElement();
+      const btn = node && node.querySelector(".st-view-btn");
+      if (btn) btn.onclick = () => onOpenSiteRef.current(btn.getAttribute("data-id"));
+    });
+    return () => {
+      map.remove();
+      mapObj.current = null;
+    };
+  }, [ready]);
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      (p) => setMyPos({ lat: p.coords.latitude, lng: p.coords.longitude }),
+      () => {
+      },
+      { enableHighAccuracy: true, maximumAge: 3e3, timeout: 15e3 }
+    );
+    return () => {
+      if (watchIdRef.current != null) navigator.geolocation.clearWatch(watchIdRef.current);
+    };
+  }, []);
+  useEffect(() => {
+    const map = mapObj.current;
+    if (!map || !myPos || !window.L) return;
+    const L = window.L;
+    if (!youMarkerRef.current) {
+      const youIcon = L.divIcon({
+        className: "",
+        html: `<div style="width:16px;height:16px;border-radius:50%;background:#2563EB;border:3px solid white;box-shadow:0 0 0 4px rgba(37,99,235,0.25);"></div>`,
+        iconSize: [16, 16],
+        iconAnchor: [8, 8]
+      });
+      youMarkerRef.current = L.marker([myPos.lat, myPos.lng], { icon: youIcon, zIndexOffset: 1e3 }).addTo(map).bindPopup("You are here");
+    } else {
+      youMarkerRef.current.setLatLng([myPos.lat, myPos.lng]);
+    }
+  }, [myPos == null ? void 0 : myPos.lat, myPos == null ? void 0 : myPos.lng]);
+  useEffect(() => {
+    const map = mapObj.current;
+    if (!map) return;
+    const L = window.L;
+    markersRef.current.forEach((m) => map.removeLayer(m));
+    markersRef.current = [];
+    located.forEach((s) => {
+      const color = (STATUS[s.leadStatus] || STATUS.cold).color;
+      const icon = L.divIcon({
+        className: "",
+        html: `<div style="width:26px;height:26px;border-radius:50% 50% 50% 0;background:${color};border:2px solid white;transform:rotate(-45deg);box-shadow:0 1px 4px rgba(0,0,0,0.4);cursor:pointer;"></div>`,
+        iconSize: [26, 26],
+        iconAnchor: [13, 26]
+      });
+      const marker = L.marker([parseFloat(s.lat), parseFloat(s.lng)], { icon }).addTo(map);
+      marker.bindPopup(buildPopupHtml(s, areas[s.areaId]), { maxWidth: 260, autoPanPadding: [20, 60] });
+      markersRef.current.push(marker);
+    });
+    const isFirstEffectRunThisMount = !didInitialFit.current;
+    const shouldFit = isFirstEffectRunThisMount ? !mapViewMemory.center : true;
+    didInitialFit.current = true;
+    mapViewMemory.filter = statusFilter;
+    if (shouldFit && located.length > 0) {
+      const bounds = L.latLngBounds(located.map((s) => [parseFloat(s.lat), parseFloat(s.lng)]));
+      map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
+    }
+  }, [ready, statusFilter, located.map((s) => s.id + s.lat + s.lng + s.leadStatus).join(",")]);
+  const filterChip = (key, label, color) => /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      key,
+      onClick: () => setStatusFilter(key),
+      className: "px-3 py-1.5 rounded-full text-[12px] font-semibold border shrink-0",
+      style: {
+        borderColor: statusFilter === key ? color || "#221D1B" : "#E4DCCF",
+        background: statusFilter === key ? color || "#221D1B" : "transparent",
+        color: statusFilter === key ? "white" : "#756D66"
+      }
+    },
+    label
+  );
+  return /* @__PURE__ */ React.createElement("div", { className: "fixed inset-0 z-30 bg-[#FAF6EF] flex flex-col" }, /* @__PURE__ */ React.createElement(TopBar, { title: "My Sites", sub: `${located.length} shown on map`, onBack }), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 px-4 py-2.5 overflow-x-auto bg-[#FAF6EF] border-b border-[#E4DCCF]" }, filterChip("all", "All sites"), filterChip("everything", "All + Lost"), Object.entries(STATUS).map(([key, s]) => filterChip(key, s.label, s.color))), /* @__PURE__ */ React.createElement("div", { className: "flex-1 relative" }, !ready && /* @__PURE__ */ React.createElement("div", { className: "absolute inset-0 flex items-center justify-center text-[#948C82] text-[13px] font-mono" }, "loading map..."), /* @__PURE__ */ React.createElement("div", { ref: mapRef, className: "absolute inset-0" }), located.length === 0 && ready && /* @__PURE__ */ React.createElement("div", { className: "absolute inset-0 flex items-center justify-center text-center px-8 pointer-events-none" }, /* @__PURE__ */ React.createElement("div", { className: "text-[#948C82] text-[13px]" }, statusFilter !== "all" ? "No sites match this filter." : "No sites have a saved location yet. Add lat/lng while creating a site to see it here."))));
+}
+function LiveNavView({ site, onBack }) {
+  const ready = useLeaflet();
+  const mapRef = useRef(null);
+  const mapObj = useRef(null);
+  const youMarkerRef = useRef(null);
+  const destMarkerRef = useRef(null);
+  const routeLineRef = useRef(null);
+  const watchIdRef = useRef(null);
+  const firstFixRef = useRef(true);
+  const dest = { lat: parseFloat(site.lat), lng: parseFloat(site.lng) };
+  const [pos, setPos] = useState(null);
+  const [locErr, setLocErr] = useState("");
+  const [routeInfo, setRouteInfo] = useState(null);
+  useEffect(() => {
+    if (!ready || !mapRef.current || mapObj.current) return;
+    const L = window.L;
+    const map = L.map(mapRef.current, { zoomControl: true }).setView([dest.lat, dest.lng], 14);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "\xA9 OpenStreetMap contributors",
+      maxZoom: 19
+    }).addTo(map);
+    mapObj.current = map;
+    setTimeout(() => map.invalidateSize(), 150);
+    const destIcon = L.divIcon({
+      className: "",
+      html: `<div style="width:26px;height:26px;border-radius:50% 50% 50% 0;background:#D81E2C;border:2px solid white;transform:rotate(-45deg);box-shadow:0 1px 4px rgba(0,0,0,0.4);"></div>`,
+      iconSize: [26, 26],
+      iconAnchor: [13, 26]
+    });
+    destMarkerRef.current = L.marker([dest.lat, dest.lng], { icon: destIcon }).addTo(map).bindPopup(site.siteName);
+    return () => {
+      map.remove();
+      mapObj.current = null;
+    };
+  }, [ready]);
+  useEffect(() => {
+    if (!navigator.geolocation) {
+      setLocErr("Live location isn't supported in this browser.");
+      return;
+    }
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      (p) => {
+        setLocErr("");
+        setPos({ lat: p.coords.latitude, lng: p.coords.longitude });
+      },
+      (err) => {
+        if (err.code === 1) setLocErr("Location permission denied. Allow location access to see live navigation.");
+        else setLocErr("Could not get your live location right now.");
+      },
+      { enableHighAccuracy: true, maximumAge: 2e3, timeout: 15e3 }
+    );
+    return () => {
+      if (watchIdRef.current != null) navigator.geolocation.clearWatch(watchIdRef.current);
+    };
+  }, []);
+  useEffect(() => {
+    const map = mapObj.current;
+    if (!map || !pos) return;
+    const L = window.L;
+    if (!youMarkerRef.current) {
+      const youIcon = L.divIcon({
+        className: "",
+        html: `<div style="width:18px;height:18px;border-radius:50%;background:#2563EB;border:3px solid white;box-shadow:0 0 0 4px rgba(37,99,235,0.25);"></div>`,
+        iconSize: [18, 18],
+        iconAnchor: [9, 9]
+      });
+      youMarkerRef.current = L.marker([pos.lat, pos.lng], { icon: youIcon, zIndexOffset: 1e3 }).addTo(map);
+    } else {
+      youMarkerRef.current.setLatLng([pos.lat, pos.lng]);
+    }
+    if (routeLineRef.current) {
+      map.removeLayer(routeLineRef.current);
+      routeLineRef.current = null;
+    }
+    routeLineRef.current = L.polyline([[pos.lat, pos.lng], [dest.lat, dest.lng]], { color: "#4C6B8A", weight: 3, dashArray: "6,6" }).addTo(map);
+    if (firstFixRef.current) {
+      firstFixRef.current = false;
+      map.fitBounds(L.latLngBounds([[pos.lat, pos.lng], [dest.lat, dest.lng]]), { padding: [50, 50], maxZoom: 16 });
+    }
+    fetch(`https://router.project-osrm.org/route/v1/driving/${pos.lng},${pos.lat};${dest.lng},${dest.lat}?overview=full&geometries=geojson`).then((r) => r.ok ? r.json() : null).then((json) => {
+      if (!json || !json.routes || !json.routes[0] || !mapObj.current) return;
+      const route = json.routes[0];
+      setRouteInfo({ km: route.distance / 1e3, mins: route.duration / 60 });
+      if (routeLineRef.current) {
+        mapObj.current.removeLayer(routeLineRef.current);
+      }
+      const coords = route.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+      routeLineRef.current = window.L.polyline(coords, { color: "#4C6B8A", weight: 5 }).addTo(mapObj.current);
+    }).catch(() => {
+    });
+  }, [pos == null ? void 0 : pos.lat, pos == null ? void 0 : pos.lng]);
+  const straightKm = pos ? haversineKm(pos.lat, pos.lng, dest.lat, dest.lng) : null;
+  const dir = pos ? compassLabel(bearingTo(pos.lat, pos.lng, dest.lat, dest.lng)) : null;
+  return /* @__PURE__ */ React.createElement("div", { className: "fixed inset-0 z-30 bg-[#FAF6EF] flex flex-col" }, /* @__PURE__ */ React.createElement(TopBar, { title: "Live Navigation", sub: site.siteName, onBack }), /* @__PURE__ */ React.createElement("div", { className: "flex-1 relative" }, !ready && /* @__PURE__ */ React.createElement("div", { className: "absolute inset-0 flex items-center justify-center text-[#948C82] text-[13px] font-mono" }, "loading map..."), /* @__PURE__ */ React.createElement("div", { ref: mapRef, className: "absolute inset-0" }), /* @__PURE__ */ React.createElement("div", { className: "absolute top-3 left-3 right-3 bg-white rounded-sm shadow-lg p-3" }, locErr ? /* @__PURE__ */ React.createElement("div", { className: "text-[12px] text-[#B34B3C] flex items-start gap-1.5" }, /* @__PURE__ */ React.createElement(AlertCircle, { size: 14, className: "shrink-0 mt-0.5" }), " ", locErr) : !pos ? /* @__PURE__ */ React.createElement("div", { className: "text-[12px] text-[#948C82] font-mono" }, "Getting your live location...") : /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { className: "text-[18px] font-bold", style: { fontFamily: "'Space Grotesk', sans-serif" } }, (routeInfo ? routeInfo.km : straightKm).toFixed(1), " km"), /* @__PURE__ */ React.createElement("div", { className: "text-[11px] text-[#948C82]" }, routeInfo ? `~${Math.round(routeInfo.mins)} min by road \xB7 head ${dir}` : `straight-line \xB7 head ${dir}`)), /* @__PURE__ */ React.createElement("div", { className: "w-2.5 h-2.5 rounded-full bg-[#2563EB]", style: { boxShadow: "0 0 0 4px rgba(37,99,235,0.2)" } }))), /* @__PURE__ */ React.createElement(
+    "a",
+    {
+      href: mapsNavUrl(site.lat, site.lng),
+      target: "_blank",
+      rel: "noopener noreferrer",
+      className: "absolute bottom-6 left-4 right-4 flex items-center justify-center gap-2 text-white text-[14px] font-semibold py-3 rounded-sm shadow-lg",
+      style: { background: "#4C6B8A" }
+    },
+    /* @__PURE__ */ React.createElement(Navigation, { size: 16 }),
+    " Open in Google Maps for voice navigation"
+  )));
+}
+function App() {
+  var _a;
+  const [data, setData] = useState({ areas: {}, sites: {} });
+  const [loading, setLoading] = useState(true);
+  const [view, setView] = useState("areaList");
+  const [selectedAreaId, setSelectedAreaId] = useState(null);
+  const [selectedSiteId, setSelectedSiteId] = useState(null);
+  const [query, setQuery] = useState("");
+  const [lightbox, setLightbox] = useState(null);
+  const [saveState, setSaveState] = useState("idle");
+  const lastAttempt = useRef(null);
+  const [confirmDialog, setConfirmDialog] = useState(null);
+  const [renameDialog, setRenameDialog] = useState(null);
+  const [importMsg, setImportMsg] = useState(null);
+  const importFileRef = useRef(null);
+  const [cloudStatus, setCloudStatus] = useState("idle");
+  const cloudDebounceRef = useRef(null);
+  const askConfirm = (message) => new Promise((resolve) => setConfirmDialog({ message, resolve }));
+  const askRename = (title, value) => new Promise((resolve) => setRenameDialog({ title, value, resolve }));
+  const navigate = (nextView, opts = {}) => {
+    const nextAreaId = "areaId" in opts ? opts.areaId : selectedAreaId;
+    const nextSiteId = "siteId" in opts ? opts.siteId : selectedSiteId;
+    window.history.pushState({ view: nextView, areaId: nextAreaId, siteId: nextSiteId, lightboxSrc: null }, "");
+    setView(nextView);
+    if ("areaId" in opts) setSelectedAreaId(opts.areaId);
+    if ("siteId" in opts) setSelectedSiteId(opts.siteId);
+  };
+  const goBack = () => window.history.back();
+  const openLightbox = (src) => {
+    window.history.pushState({ view, areaId: selectedAreaId, siteId: selectedSiteId, lightboxSrc: src }, "");
+    setLightbox(src);
+  };
+  const closeLightbox = () => window.history.back();
+  useEffect(() => {
+    window.history.replaceState({ view: "areaList", areaId: null, siteId: null, lightboxSrc: null }, "");
+    const handler = (e) => {
+      var _a2, _b;
+      const s = e.state || { view: "areaList", areaId: null, siteId: null, lightboxSrc: null };
+      setView(s.view);
+      setSelectedAreaId((_a2 = s.areaId) != null ? _a2 : null);
+      setSelectedSiteId((_b = s.siteId) != null ? _b : null);
+      setLightbox(s.lightboxSrc || null);
+    };
+    window.addEventListener("popstate", handler);
+    return () => window.removeEventListener("popstate", handler);
+  }, []);
+  const exportBackup = () => {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "site-track-pro-backup.json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+  const shareBackup = async () => {
+    const filename = "site-track-pro-backup.json";
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    try {
+      const file = new File([blob], filename, { type: "application/json" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: "Site Track Pro Backup" });
+        return;
+      }
+    } catch (err) {
+      if (err && err.name === "AbortError") return;
+    }
+    setImportMsg({ type: "error", text: "Direct share isn't supported here \u2014 downloading the backup instead. Save it to Drive/Mail manually." });
+    setTimeout(() => setImportMsg(null), 4500);
+    exportBackup();
+  };
+  const generateExcelReport = () => {
+    if (typeof XLSX === "undefined" || !XLSX) {
+      setImportMsg({ type: "error", text: "Report tool is still loading \u2014 wait a moment and try again." });
+      setTimeout(() => setImportMsg(null), 3500);
+      return;
+    }
+    const cc = (site, key) => {
+      var _a2;
+      const c = (_a2 = site.contacts) == null ? void 0 : _a2[key];
+      return c && (c.name || c.phone) ? `${c.name || ""} ${c.phone || ""}`.trim() : "";
+    };
+    const sitesRows = Object.values(data.sites).map((s) => {
+      const area = data.areas[s.areaId];
+      const lv = latestVisit(s);
+      const fu = followUpInfo(s);
+      const otherContacts = (s.extraContacts || []).map((c) => `${c.name || ""} ${c.phone || ""}${c.notes ? " (" + c.notes + ")" : ""}`.trim()).filter(Boolean).join("; ");
+      return {
+        "Area": (area == null ? void 0 : area.name) || "",
+        "Site Name": s.siteName,
+        "Site Type": s.siteType || "",
+        "Status": (STATUS[s.leadStatus] || STATUS.cold).label,
+        "Lost Reason": s.leadStatus === "lost" ? s.lostReason || "" : "",
+        "Address": s.address || "",
+        "Google Maps Link": s.lat && s.lng ? mapsNavUrl(s.lat, s.lng) : "",
+        "Owner": cc(s, "owner"),
+        "Engineer": cc(s, "engineer"),
+        "Builder": cc(s, "builder"),
+        "Architect": cc(s, "architect"),
+        "Painter": cc(s, "painter"),
+        "Reference": cc(s, "reference"),
+        "Other Contacts": otherContacts,
+        "Total Visits": (s.visits || []).length,
+        "Last Visit Date": lv ? lv.date : "",
+        "Next Follow-up": fu ? fu.date : "",
+        "Created On": s.createdAt || ""
+      };
+    });
+    const visitRows = [];
+    Object.values(data.sites).forEach((s) => {
+      const area = data.areas[s.areaId];
+      (s.visits || []).forEach((v) => {
+        const contactsMet = (v.paintersMet || []).map((p) => `${p.name || ""} ${p.phone || ""}`.trim()).filter(Boolean).join("; ");
+        visitRows.push({
+          "Area": (area == null ? void 0 : area.name) || "",
+          "Site Name": s.siteName,
+          "Visit Date": v.date,
+          "Contacts Met": contactsMet,
+          "Notes": v.notes || "",
+          "Follow-up Date": v.followUpDate || ""
+        });
+      });
+    });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sitesRows), "Sites");
+    if (visitRows.length > 0) {
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(visitRows), "Visits");
+    }
+    XLSX.writeFile(wb, `site-track-pro-report-${todayISO()}.xlsx`);
+  };
+  const importBackup = async (e) => {
+    var _a2;
+    const file = (_a2 = e.target.files) == null ? void 0 : _a2[0];
+    e.target.value = "";
+    if (!file) return;
+    let parsed;
+    try {
+      const text = await file.text();
+      parsed = JSON.parse(text);
+    } catch (err) {
+      setImportMsg({ type: "error", text: "Could not read that file \u2014 make sure it's a Site Track Pro backup (.json)." });
+      setTimeout(() => setImportMsg(null), 4e3);
+      return;
+    }
+    if (!parsed || typeof parsed !== "object" || !parsed.areas || !parsed.sites) {
+      setImportMsg({ type: "error", text: "That file doesn't look like a valid backup." });
+      setTimeout(() => setImportMsg(null), 4e3);
+      return;
+    }
+    const ok = await askConfirm("This will replace all current data on this device with the backup file. Continue?");
+    if (!ok) return;
+    await persist(parsed);
+    setImportMsg({ type: "success", text: "Backup restored." });
+    setTimeout(() => setImportMsg(null), 3e3);
+  };
+  useEffect(() => {
+    (async () => {
+      const d = await loadData();
+      setData(d);
+      setLoading(false);
+    })();
+  }, []);
+  const pushToCloud = async (payload, silent) => {
+    if (!payload.cloudEmail || !payload.cloudScriptUrl) {
+      if (!silent) {
+        setImportMsg({ type: "error", text: "Set up your email and Apps Script URL first." });
+        setTimeout(() => setImportMsg(null), 3500);
+      }
+      return;
+    }
+    setCloudStatus("syncing");
+    try {
+      const resp = await fetch(payload.cloudScriptUrl, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ email: payload.cloudEmail, data: payload })
+      });
+      const text = await resp.text();
+      let json = null;
+      try {
+        json = JSON.parse(text);
+      } catch (parseErr) {
+      }
+      if (json && json.ok) {
+        setCloudStatus("synced");
+        setTimeout(() => setCloudStatus((s) => s === "synced" ? "idle" : s), 2e3);
+      } else {
+        setCloudStatus("error");
+        if (!silent) {
+          const detail = (json == null ? void 0 : json.error) ? json.error : `Unexpected response (HTTP ${resp.status}). Check the Web App URL ends in /exec, and that deployment access is set to "Anyone".`;
+          setImportMsg({ type: "error", text: `Cloud sync failed \u2014 ${detail}` });
+          setTimeout(() => setImportMsg(null), 7e3);
+        }
+      }
+    } catch (err) {
+      setCloudStatus("error");
+      if (!silent) {
+        setImportMsg({ type: "error", text: `Could not reach cloud (${err.message || "network error"}). Check your internet connection and the Apps Script URL.` });
+        setTimeout(() => setImportMsg(null), 7e3);
+      }
+    }
+  };
+  const cloudLoad = async () => {
+    if (!data.cloudEmail || !data.cloudScriptUrl) {
+      setImportMsg({ type: "error", text: "Set up your email and Apps Script URL first." });
+      setTimeout(() => setImportMsg(null), 3500);
+      return;
+    }
+    setCloudStatus("syncing");
+    try {
+      const resp = await fetch(`${data.cloudScriptUrl}?email=${encodeURIComponent(data.cloudEmail)}`);
+      const json = await resp.json();
+      setCloudStatus("idle");
+      if (json.ok && json.data) {
+        const ok = await askConfirm("Replace current data on this device with the cloud version?");
+        if (!ok) return;
+        await persist({ ...json.data, cloudEmail: data.cloudEmail, cloudScriptUrl: data.cloudScriptUrl });
+        setImportMsg({ type: "success", text: "Loaded from cloud." });
+        setTimeout(() => setImportMsg(null), 3e3);
+      } else {
+        setImportMsg({ type: "error", text: json.ok ? "No cloud backup found for this email yet." : json.error || "Cloud load failed." });
+        setTimeout(() => setImportMsg(null), 3500);
+      }
+    } catch (err) {
+      setCloudStatus("error");
+      setImportMsg({ type: "error", text: "Could not reach cloud \u2014 check internet / script URL." });
+      setTimeout(() => setImportMsg(null), 3500);
+    }
+  };
+  const setCloudConfig = async (email, url) => {
+    await persist({ ...data, cloudEmail: email, cloudScriptUrl: url });
+  };
+  const persist = useCallback(async (next) => {
+    setData(next);
+    lastAttempt.current = next;
+    setSaveState("saving");
+    const ok = await saveData(next);
+    if (ok) {
+      setSaveState("saved");
+      setTimeout(() => setSaveState((s) => s === "saved" ? "idle" : s), 1200);
+    } else {
+      setSaveState("error");
+    }
+    if (next.cloudEmail && next.cloudScriptUrl) {
+      if (cloudDebounceRef.current) clearTimeout(cloudDebounceRef.current);
+      cloudDebounceRef.current = setTimeout(() => pushToCloud(next, true), 1200);
+    }
+  }, []);
+  const retrySave = async () => {
+    if (!lastAttempt.current) return;
+    setSaveState("saving");
+    const ok = await saveData(lastAttempt.current);
+    setSaveState(ok ? "saved" : "error");
+    if (ok) setTimeout(() => setSaveState((s) => s === "saved" ? "idle" : s), 1200);
+  };
+  const addArea = async (name) => {
+    const id = uid();
+    const next = { ...data, areas: { ...data.areas, [id]: { id, name, createdAt: todayISO() } } };
+    await persist(next);
+    navigate("areaSites", { areaId: id });
+  };
+  const findSiteByPhone = (phone, excludeSiteId) => {
+    const p = (phone || "").trim();
+    if (!p) return null;
+    for (const s of Object.values(data.sites)) {
+      if (s.id === excludeSiteId) continue;
+      const phones = [
+        ...CONTACT_ROLES.map((r) => {
+          var _a2, _b;
+          return (_b = (_a2 = s.contacts) == null ? void 0 : _a2[r.key]) == null ? void 0 : _b.phone;
+        }),
+        ...(s.extraContacts || []).map((c) => c.phone)
+      ];
+      if (phones.some((ph) => ph && ph.trim() === p)) return s;
+    }
+    return null;
+  };
+  const renameArea = async (areaId) => {
+    const area = data.areas[areaId];
+    const newName = await askRename("Rename area", area.name);
+    if (!newName || newName === area.name) return;
+    const next = { ...data, areas: { ...data.areas, [areaId]: { ...area, name: newName } } };
+    await persist(next);
+  };
+  const deleteArea = async (areaId) => {
+    const area = data.areas[areaId];
+    const areaSites = Object.values(data.sites).filter((s) => s.areaId === areaId);
+    const ok = await askConfirm(
+      areaSites.length > 0 ? `Delete "${area.name}" and all ${areaSites.length} site${areaSites.length !== 1 ? "s" : ""} inside it? This cannot be undone.` : `Delete "${area.name}"? This cannot be undone.`
+    );
+    if (!ok) return;
+    const nextSites = { ...data.sites };
+    areaSites.forEach((s) => delete nextSites[s.id]);
+    const nextAreas = { ...data.areas };
+    delete nextAreas[areaId];
+    await persist({ ...data, areas: nextAreas, sites: nextSites });
+    if (selectedAreaId === areaId) navigate("areaList", { areaId: null });
+  };
+  const renameSite = async (siteId) => {
+    const site = data.sites[siteId];
+    const newName = await askRename("Rename site", site.siteName);
+    if (!newName || newName === site.siteName) return;
+    const next = { ...data, sites: { ...data.sites, [siteId]: { ...site, siteName: newName } } };
+    await persist(next);
+  };
+  const setLostReason = async (siteId, reason) => {
+    const site = data.sites[siteId];
+    if (site.lostReason === reason) return;
+    const next = { ...data, sites: { ...data.sites, [siteId]: { ...site, lostReason: reason } } };
+    await persist(next);
+  };
+  const addSite = async (form) => {
+    const id = uid();
+    const next = {
+      ...data,
+      sites: {
+        ...data.sites,
+        [id]: { id, areaId: selectedAreaId, leadStatus: "cold", createdAt: todayISO(), ...form, visits: [] }
+      }
+    };
+    await persist(next);
+    navigate("siteDetail", { siteId: id });
+  };
+  const addVisit = async (siteId, visit) => {
+    const site = data.sites[siteId];
+    const next = { ...data, sites: { ...data.sites, [siteId]: { ...site, visits: [...site.visits || [], visit] } } };
+    await persist(next);
+    goBack();
+  };
+  const updateSite = async (siteId, form) => {
+    const site = data.sites[siteId];
+    const next = { ...data, sites: { ...data.sites, [siteId]: { ...site, ...form } } };
+    await persist(next);
+    goBack();
+  };
+  const setStatus = async (siteId, status) => {
+    const site = data.sites[siteId];
+    const next = { ...data, sites: { ...data.sites, [siteId]: { ...site, leadStatus: status } } };
+    await persist(next);
+  };
+  const deleteSite = async (siteId) => {
+    const ok = await askConfirm("Delete this site and all its visit history? This cannot be undone.");
+    if (!ok) return;
+    const next = { ...data, sites: { ...data.sites } };
+    delete next.sites[siteId];
+    await persist(next);
+    goBack();
+  };
+  const allSitesFlat = Object.values(data.sites);
+  if (loading) {
+    return /* @__PURE__ */ React.createElement("div", { className: "min-h-screen flex items-center justify-center bg-[#FAF6EF]" }, /* @__PURE__ */ React.createElement("div", { className: "text-[#948C82] text-[13px] font-mono" }, "loading site diary..."));
+  }
+  const selectedArea = selectedAreaId ? data.areas[selectedAreaId] : null;
+  const selectedSite = selectedSiteId ? data.sites[selectedSiteId] : null;
+  const openSiteFromAnywhere = (siteId) => {
+    const s = data.sites[siteId];
+    navigate("siteDetail", { areaId: s ? s.areaId : selectedAreaId, siteId });
+  };
+  return /* @__PURE__ */ React.createElement("div", { className: "min-h-screen bg-[#FAF6EF]", style: { fontFamily: "'Inter', sans-serif" } }, /* @__PURE__ */ React.createElement("style", null, `@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap');`), saveState === "error" && /* @__PURE__ */ React.createElement("div", { className: "bg-[#B34B3C] text-white text-[11px] text-center py-1.5 flex items-center justify-center gap-2" }, "Could not save your last change", /* @__PURE__ */ React.createElement("button", { onClick: retrySave, className: "underline font-semibold" }, "Retry")), saveState === "saving" && /* @__PURE__ */ React.createElement("div", { className: "bg-[#4C6B8A] text-white text-[11px] text-center py-1" }, "Saving..."), saveState === "saved" && /* @__PURE__ */ React.createElement("div", { className: "bg-[#5B7F5E] text-white text-[11px] text-center py-1" }, "Saved"), importMsg && /* @__PURE__ */ React.createElement("div", { className: "text-white text-[11px] text-center py-1.5", style: { background: importMsg.type === "error" ? "#B34B3C" : "#5B7F5E" } }, importMsg.text), /* @__PURE__ */ React.createElement("input", { ref: importFileRef, type: "file", accept: "application/json,.json", onChange: importBackup, className: "hidden" }), view === "areaList" && /* @__PURE__ */ React.createElement(
+    AreaList,
+    {
+      areas: data.areas,
+      sites: data.sites,
+      onOpenArea: (id) => navigate("areaSites", { areaId: id }),
+      onAddArea: () => navigate("addArea"),
+      onOpenMap: () => navigate("map"),
+      query,
+      setQuery,
+      allSitesFlat,
+      onOpenSite: openSiteFromAnywhere,
+      onRenameArea: renameArea,
+      onDeleteArea: deleteArea,
+      onExport: exportBackup,
+      onShareBackup: shareBackup,
+      onGenerateReport: generateExcelReport,
+      cloudEmail: data.cloudEmail,
+      cloudScriptUrl: data.cloudScriptUrl,
+      cloudStatus,
+      onSetCloudConfig: setCloudConfig,
+      onCloudSave: () => pushToCloud(data, false),
+      onCloudLoad: cloudLoad,
+      onImportClick: () => {
+        var _a2;
+        return (_a2 = importFileRef.current) == null ? void 0 : _a2.click();
+      }
+    }
+  ), view === "addArea" && /* @__PURE__ */ React.createElement(AddAreaForm, { onSave: addArea, onCancel: goBack, confirmFn: askConfirm }), view === "areaSites" && selectedArea && /* @__PURE__ */ React.createElement(
+    AreaSites,
+    {
+      area: selectedArea,
+      sites: data.sites,
+      onOpen: (id) => navigate("siteDetail", { siteId: id }),
+      onAddSite: () => navigate("addSite"),
+      onBack: goBack
+    }
+  ), view === "addSite" && selectedArea && /* @__PURE__ */ React.createElement(AddSiteForm, { areaName: selectedArea.name, onSave: addSite, onCancel: goBack, confirmFn: askConfirm, onPreview: openLightbox, onCheckPhone: findSiteByPhone }), view === "editSite" && selectedSite && /* @__PURE__ */ React.createElement(
+    AddSiteForm,
+    {
+      areaName: (_a = data.areas[selectedSite.areaId]) == null ? void 0 : _a.name,
+      initial: selectedSite,
+      onSave: (form) => updateSite(selectedSite.id, form),
+      onCancel: goBack,
+      confirmFn: askConfirm,
+      onPreview: openLightbox,
+      onCheckPhone: findSiteByPhone
+    }
+  ), view === "siteDetail" && selectedSite && /* @__PURE__ */ React.createElement(
+    SiteDetail,
+    {
+      site: selectedSite,
+      area: data.areas[selectedSite.areaId],
+      onBack: goBack,
+      onAddVisit: () => navigate("addVisit"),
+      onEdit: () => navigate("editSite"),
+      onSetStatus: setStatus,
+      onDelete: deleteSite,
+      onPhoto: openLightbox,
+      onRenameSite: renameSite,
+      onSetLostReason: setLostReason,
+      onLiveNav: () => navigate("liveNav")
+    }
+  ), view === "addVisit" && selectedSite && /* @__PURE__ */ React.createElement(AddVisitForm, { site: selectedSite, onSave: (v) => addVisit(selectedSite.id, v), onCancel: goBack, confirmFn: askConfirm, onPreview: openLightbox }), view === "map" && /* @__PURE__ */ React.createElement(MapView, { sites: data.sites, areas: data.areas, onBack: goBack, onOpenSite: (id) => {
+    openSiteFromAnywhere(id);
+  } }), view === "liveNav" && selectedSite && /* @__PURE__ */ React.createElement(LiveNavView, { site: selectedSite, onBack: goBack }), /* @__PURE__ */ React.createElement(Lightbox, { src: lightbox, onClose: closeLightbox }), confirmDialog && /* @__PURE__ */ React.createElement("div", { className: "fixed inset-0 z-50 bg-black/50 flex items-center justify-center px-6", onClick: () => {
+    confirmDialog.resolve(false);
+    setConfirmDialog(null);
+  } }, /* @__PURE__ */ React.createElement("div", { className: "bg-white rounded-sm p-5 w-full max-w-sm", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "text-[14px] text-[#221D1B] mb-5 leading-relaxed" }, confirmDialog.message), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2" }, /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      onClick: () => {
+        confirmDialog.resolve(false);
+        setConfirmDialog(null);
+      },
+      className: "flex-1 py-2.5 rounded-sm border border-[#E4DCCF] text-[13px] font-semibold text-[#221D1B]"
+    },
+    "Cancel"
+  ), /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      onClick: () => {
+        confirmDialog.resolve(true);
+        setConfirmDialog(null);
+      },
+      className: "flex-1 py-2.5 rounded-sm text-white text-[13px] font-semibold",
+      style: { background: "#D81E2C" }
+    },
+    "Confirm"
+  )))), renameDialog && /* @__PURE__ */ React.createElement(
+    RenameDialog,
+    {
+      title: renameDialog.title,
+      value: renameDialog.value,
+      onCancel: () => {
+        renameDialog.resolve(null);
+        setRenameDialog(null);
+      },
+      onSave: (v) => {
+        renameDialog.resolve(v);
+        setRenameDialog(null);
+      }
+    }
+  ));
+}
+const rootEl = document.getElementById("root");
+ReactDOM.createRoot(rootEl).render(/* @__PURE__ */ React.createElement(App, null));
+</script>
+</body>
+</html>

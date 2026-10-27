@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -13,7 +13,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -21,25 +21,38 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Initialize Capacitor App
+      - name: Create Web Directory & Config
         run: |
-          mkdir www
+          mkdir -p www
           cp site-track-pro.html www/index.html
-          npm init -y
-          npm install @capacitor/core @capacitor/cli @capacitor/android
-          npx cap init "Site Track Pro" "com.sitetrack.pro" --web-dir www
+          cat << 'EOF' > package.json
+          {
+            "name": "site-track-pro",
+            "version": "1.0.0",
+            "private": true
+          }
+          EOF
+          cat << 'EOF' > capacitor.config.json
+          {
+            "appId": "com.sitetrack.pro",
+            "appName": "Site Track Pro",
+            "webDir": "www",
+            "bundledWebRuntime": false
+          }
+          EOF
+
+      - name: Install Capacitor & Add Android
+        run: |
+          npm install @capacitor/core@5 @capacitor/cli@5 @capacitor/android@5
           npx cap add android
 
-      - name: Build APK with Gradle
+      - name: Build Debug APK
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Upload APK
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: SiteTrackPro-APK
